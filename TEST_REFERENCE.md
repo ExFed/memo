@@ -24,7 +24,7 @@ cargo test
 # Just unit tests
 cargo test --lib
 
-# Just integration tests  
+# Just integration tests
 cargo test --test integration_test
 
 # Specific module
@@ -49,7 +49,7 @@ cargo test test_cache_file_structure
 - Command, exit_code, timestamp, digest fields
 
 **cache.rs**: File I/O operations
-- XDG_CONFIG_HOME/memo/ directory
+- XDG_CACHE_HOME/memo/ directory
 - Write/read .json, .out, .err files
 - Binary data support
 
@@ -99,4 +99,3 @@ All tests should PASS once implementation is complete.
 6. → Implement `main.rs` (tie it together)
 7. → Run tests, fix failures
 8. → All tests green ✓
-

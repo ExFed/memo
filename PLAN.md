@@ -46,13 +46,13 @@ memo --verbose git status         # Complex command
 
 #### Storage Location
 
-- **Base Directory**: `$XDG_CONFIG_HOME/memo/`
-  - Falls back to `$HOME/.config/memo/` if `XDG_CONFIG_HOME` is not set
+- **Base Directory**: `$XDG_CACHE_HOME/memo/`
+  - Falls back to `$HOME/.cache/memo/` if `XDG_CACHE_HOME` is not set
   - Creates directory structure if it doesn't exist
 - **File Structure**:
 
   ```text
-  $XDG_CONFIG_HOME/memo/
+  $XDG_CACHE_HOME/memo/
   ├── <digest1>.json    # Metadata
   ├── <digest1>.out     # stdout
   ├── <digest1>.err     # stderr
@@ -110,7 +110,7 @@ Digest: "abc123..." (64 hex chars)
 #### 3. Check Cache
 
 ```text
-Path: $XDG_CONFIG_HOME/memo/abc123....json
+Path: $XDG_CACHE_HOME/memo/abc123....json
 ↓
 Exists? → YES: Load and replay
         → NO: Execute and store
@@ -321,10 +321,10 @@ error: Missing required command
 ### Test Case 10: Cache Directory Creation
 
 ```bash
-$ rm -rf $XDG_CONFIG_HOME/memo
+$ rm -rf $XDG_CACHE_HOME/memo
 $ memo echo test
 test
-$ ls $XDG_CONFIG_HOME/memo
+$ ls $XDG_CACHE_HOME/memo
 [digest].json  [digest].out  [digest].err
 ```
 
@@ -426,7 +426,7 @@ $ echo $?
 ✓ Binary/non-UTF8 data handled correctly in output files
 ✓ Exit codes match original command execution
 ✓ Stdout and stderr are correctly separated
-✓ XDG_CONFIG_HOME is respected
+✓ XDG_CACHE_HOME is respected
 ✓ Directory creation is automatic and safe
 ✓ Error messages are user-friendly
 

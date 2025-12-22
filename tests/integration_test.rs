@@ -1,5 +1,5 @@
 use assert_cmd::Command;
-use predicates::prelude::*;
+use predicates::prelude::predicate;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -20,8 +20,8 @@ impl TestEnv {
     }
 
     fn cmd(&self) -> Command {
-        let mut cmd = Command::cargo_bin("memo").unwrap();
-        cmd.env("XDG_CONFIG_HOME", self.cache_dir.path());
+        let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("memo");
+        cmd.env("XDG_CACHE_HOME", self.cache_dir.path());
         cmd
     }
 
@@ -30,7 +30,7 @@ impl TestEnv {
         if !memo_dir.exists() {
             return vec![];
         }
-        
+
         let mut files: Vec<String> = fs::read_dir(&memo_dir)
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
@@ -282,10 +282,10 @@ fn test_cache_directory_creation() {
 
     // Cache dir should now exist with three files
     assert!(memo_dir.exists());
-    
+
     let files = env.list_cache_files();
     assert_eq!(files.len(), 3);
-    
+
     // Should have .json, .out, and .err files
     assert!(files.iter().any(|f| f.ends_with(".json")));
     assert!(files.iter().any(|f| f.ends_with(".out")));
@@ -373,7 +373,7 @@ fn test_cache_file_structure() {
     // Verify .json has valid structure
     let json_content = env.read_cache_file(&json_file);
     let json: serde_json::Value = serde_json::from_slice(&json_content).unwrap();
-    
+
     assert!(json["command"].is_string());
     assert_eq!(json["command"].as_str().unwrap(), "echo hello");
     assert!(json["exit_code"].is_number());

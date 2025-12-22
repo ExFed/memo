@@ -1,9 +1,12 @@
 // Unit tests for the executor module
 
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io;
 use std::path::Path;
 use std::process::{Command, Stdio};
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 pub struct ExecutionResult {
     pub exit_code: i32,
@@ -26,8 +29,21 @@ pub fn execute_and_stream(
         ));
     }
 
-    let stdout_file = File::create(stdout_path)?;
-    let stderr_file = File::create(stderr_path)?;
+    let mut stdout_opts = OpenOptions::new();
+    stdout_opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        stdout_opts.mode(0o600);
+    }
+    let stdout_file = stdout_opts.open(stdout_path)?;
+
+    let mut stderr_opts = OpenOptions::new();
+    stderr_opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        stderr_opts.mode(0o600);
+    }
+    let stderr_file = stderr_opts.open(stderr_path)?;
 
     let status = Command::new(args[0])
         .args(&args[1..])

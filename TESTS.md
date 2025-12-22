@@ -70,7 +70,7 @@ Tests cache file operations:
 - Reading non-existent memos (error case)
 - Multiple memos coexistence
 - Correct file naming (.json, .out, .err)
-- XDG_CONFIG_HOME environment variable respect
+- XDG_CACHE_HOME environment variable respect
 - Large output (1MB test)
 
 #### Executor Module (`src/executor.rs`)
@@ -121,8 +121,8 @@ Tests command execution:
 ✓ Three files per memo (digest.json, digest.out, digest.err)
 ✓ Correct file naming
 ✓ File coexistence for multiple memos
-✓ XDG_CONFIG_HOME environment variable
-✓ Fallback to ~/.config
+✓ XDG_CACHE_HOME environment variable
+✓ Fallback to ~/.cache
 
 ## Running Tests
 
@@ -159,8 +159,9 @@ predicates = "3.0"    # Assertions for command output
 ## Test Data Isolation
 
 All tests use:
+
 - Temporary directories (`tempfile::TempDir`)
-- Isolated XDG_CONFIG_HOME environments
+- Isolated XDG_CACHE_HOME environments
 - Automatic cleanup after test completion
 - No interference between tests
 
@@ -168,7 +169,7 @@ All tests use:
 
 All tests should pass before implementation. After implementation:
 - 9 unit tests in digest module
-- 6 unit tests in memo module  
+- 6 unit tests in memo module
 - 13 unit tests in cache module
 - 15 unit tests in executor module
 - 19 integration tests
@@ -184,7 +185,7 @@ Before implementation approval:
 - [ ] Edge cases covered
 - [ ] Binary data handling tested
 - [ ] File structure verified (.json, .out, .err)
-- [ ] XDG_CONFIG_HOME tested
+- [ ] XDG_CACHE_HOME tested
 - [ ] Error cases covered
 - [ ] Verbose mode tested
 

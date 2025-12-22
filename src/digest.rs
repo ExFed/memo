@@ -2,11 +2,22 @@
 
 use sha2::{Digest, Sha256};
 
+#[cfg(test)]
 pub fn compute_digest(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
     let result = hasher.finalize();
     hex::encode(result)
+}
+
+pub fn compute_digest_for_args(args: &[String]) -> Result<String, serde_json::Error> {
+    // Hash a canonical encoding of argv to avoid collisions like:
+    // ["echo", "a b"] vs ["echo", "a", "b"].
+    let encoded = serde_json::to_vec(args)?;
+    let mut hasher = Sha256::new();
+    hasher.update(&encoded);
+    let result = hasher.finalize();
+    Ok(hex::encode(result))
 }
 
 #[cfg(test)]
@@ -83,5 +94,15 @@ mod tests {
             digest,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
+    }
+
+    #[test]
+    fn test_digest_args_avoids_join_collisions() {
+        let a = vec!["echo".to_string(), "a b".to_string()];
+        let b = vec!["echo".to_string(), "a".to_string(), "b".to_string()];
+
+        let da = compute_digest_for_args(&a).unwrap();
+        let db = compute_digest_for_args(&b).unwrap();
+        assert_ne!(da, db);
     }
 }

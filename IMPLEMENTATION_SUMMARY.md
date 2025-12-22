@@ -2,7 +2,7 @@
 
 ## Status: ✅ COMPLETE
 
-**Date**: 2025-12-22  
+**Date**: 2025-12-22
 **Version**: 0.1.0
 
 ## Implementation Overview
@@ -43,7 +43,7 @@ Additional validations:
 - ✓ Binary data handling
 - ✓ Three-file structure (.json, .out, .err)
 - ✓ Large output streaming (1MB+)
-- ✓ XDG_CONFIG_HOME compliance
+- ✓ XDG_CACHE_HOME compliance
 
 ## Architecture Implemented
 
@@ -58,7 +58,7 @@ Additional validations:
    - Fields: command, exit_code, timestamp, digest
 
 3. **cache.rs** - File I/O operations (streaming)
-   - `get_cache_dir()` - XDG_CONFIG_HOME support
+   - `get_cache_dir()` - XDG_CACHE_HOME support
    - `ensure_cache_dir()` - Directory creation
    - `memo_exists()` - Check cache hit
    - `get_cache_paths()` - Path management
@@ -95,8 +95,8 @@ Additional validations:
 - 64 hex characters
 
 ✅ **XDG Compliance**
-- Uses `$XDG_CONFIG_HOME/memo/`
-- Falls back to `$HOME/.config/memo/`
+- Uses `$XDG_CACHE_HOME/memo/`
+- Falls back to `$HOME/.cache/memo/`
 
 ## CLI Usage
 
@@ -119,7 +119,7 @@ memo sh -c "echo out; echo err >&2; exit 42"
 ## Cache Structure
 
 ```
-$XDG_CONFIG_HOME/memo/
+$XDG_CACHE_HOME/memo/
 ├── 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824.json
 ├── 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824.out
 ├── 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824.err
@@ -188,7 +188,7 @@ From PLAN.md:
 - ✅ Binary/non-UTF8 data handled correctly in output files
 - ✅ Exit codes match original command execution
 - ✅ Stdout and stderr are correctly separated
-- ✅ XDG_CONFIG_HOME is respected
+- ✅ XDG_CACHE_HOME is respected
 - ✅ Directory creation is automatic and safe
 - ✅ Error messages are user-friendly
 
@@ -230,7 +230,7 @@ memo/
 
 The memo application is fully implemented, tested, and ready for use. All requirements from PLAN.md have been met, and the streaming architecture ensures efficient handling of outputs of any size.
 
-**Build Command**: `cargo build --release`  
-**Binary Location**: `target/release/memo`  
-**Test Command**: `cargo test`  
+**Build Command**: `cargo build --release`
+**Binary Location**: `target/release/memo`
+**Test Command**: `cargo test`
 **Result**: All 68 tests passing ✅

@@ -1,27 +1,51 @@
 // Unit tests for the cache module
 
 use crate::memo::Memo;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, copy};
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
 pub fn get_cache_dir() -> io::Result<PathBuf> {
-    let base = if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+    let base = if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
         PathBuf::from(xdg)
     } else {
         dirs::home_dir()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Cannot find home directory"))?
-            .join(".config")
+            .join(".cache")
     };
     Ok(base.join("memo"))
 }
 
 pub fn ensure_cache_dir(cache_dir: &Path) -> io::Result<()> {
-    fs::create_dir_all(cache_dir)
+    fs::create_dir_all(cache_dir)?;
+
+    #[cfg(unix)]
+    {
+        let perm = fs::Permissions::from_mode(0o700);
+        let _ = fs::set_permissions(cache_dir, perm);
+    }
+
+    Ok(())
 }
 
+#[cfg(test)]
 pub fn memo_exists(cache_dir: &Path, digest: &str) -> bool {
     cache_dir.join(format!("{}.json", digest)).exists()
+}
+
+pub fn memo_complete(cache_dir: &Path, digest: &str) -> bool {
+    let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
+    json_path.exists() && out_path.exists() && err_path.exists()
+}
+
+pub fn purge_memo(cache_dir: &Path, digest: &str) {
+    let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
+    let _ = fs::remove_file(json_path);
+    let _ = fs::remove_file(out_path);
+    let _ = fs::remove_file(err_path);
 }
 
 pub fn get_cache_paths(cache_dir: &Path, digest: &str) -> (PathBuf, PathBuf, PathBuf) {
@@ -31,6 +55,32 @@ pub fn get_cache_paths(cache_dir: &Path, digest: &str) -> (PathBuf, PathBuf, Pat
     (json_path, out_path, err_path)
 }
 
+pub struct CacheLock {
+    path: PathBuf,
+}
+
+impl Drop for CacheLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+pub fn try_acquire_lock(cache_dir: &Path, digest: &str) -> io::Result<CacheLock> {
+    let lock_path = cache_dir.join(format!("{}.lock", digest));
+
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        opts.mode(0o600);
+    }
+
+    let _file = opts.open(&lock_path)?;
+    Ok(CacheLock { path: lock_path })
+}
+
+#[cfg(test)]
 pub fn write_memo(
     cache_dir: &Path,
     digest: &str,
@@ -48,6 +98,7 @@ pub fn write_memo(
     Ok(())
 }
 
+#[cfg(test)]
 pub fn read_memo(cache_dir: &Path, digest: &str) -> io::Result<(Memo, Vec<u8>, Vec<u8>)> {
     let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
 
@@ -97,7 +148,7 @@ mod tests {
     #[test]
     fn test_ensure_cache_dir_creates_directory() {
         let (_temp, cache_dir) = setup_test_cache();
-        
+
         assert!(!cache_dir.exists());
         ensure_cache_dir(&cache_dir).unwrap();
         assert!(cache_dir.exists());
@@ -107,7 +158,7 @@ mod tests {
     #[test]
     fn test_ensure_cache_dir_idempotent() {
         let (_temp, cache_dir) = setup_test_cache();
-        
+
         ensure_cache_dir(&cache_dir).unwrap();
         ensure_cache_dir(&cache_dir).unwrap(); // Should not error
         assert!(cache_dir.exists());
@@ -268,10 +319,10 @@ mod tests {
     fn test_get_cache_dir_respects_xdg() {
         let temp = TempDir::new().unwrap();
         let xdg_path = temp.path().to_path_buf();
-        
-        std::env::set_var("XDG_CONFIG_HOME", &xdg_path);
+
+        std::env::set_var("XDG_CACHE_HOME", &xdg_path);
         let cache_dir = get_cache_dir().unwrap();
-        std::env::remove_var("XDG_CONFIG_HOME");
+        std::env::remove_var("XDG_CACHE_HOME");
 
         assert_eq!(cache_dir, xdg_path.join("memo"));
     }
@@ -364,7 +415,7 @@ mod tests {
     fn test_get_cache_paths() {
         let path = PathBuf::from("/tmp/cache");
         let (json, out, err) = get_cache_paths(&path, "abc123");
-        
+
         assert_eq!(json, PathBuf::from("/tmp/cache/abc123.json"));
         assert_eq!(out, PathBuf::from("/tmp/cache/abc123.out"));
         assert_eq!(err, PathBuf::from("/tmp/cache/abc123.err"));
