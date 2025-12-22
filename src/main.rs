@@ -104,7 +104,7 @@ fn run() -> io::Result<()> {
 
                     // Create memo metadata
                     let memo = Memo {
-                        command: command_string,
+                        cmd: args.command.clone(),
                         exit_code: result.exit_code,
                         timestamp: Utc::now().to_rfc3339(),
                         digest: digest.clone(),

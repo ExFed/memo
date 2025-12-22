@@ -166,7 +166,7 @@ mod tests {
 
         let digest = "abc123";
         let memo = Memo {
-            command: "echo test".to_string(),
+            cmd: vec!["echo".to_string(), "test".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -178,7 +178,7 @@ mod tests {
 
         let (read_memo, read_stdout, read_stderr) = read_memo(&cache_dir, digest).unwrap();
 
-        assert_eq!(read_memo.command, memo.command);
+        assert_eq!(read_memo.cmd, memo.cmd);
         assert_eq!(read_memo.exit_code, memo.exit_code);
         assert_eq!(read_memo.digest, memo.digest);
         assert_eq!(read_stdout, stdout);
@@ -192,7 +192,7 @@ mod tests {
 
         let digest = "empty123";
         let memo = Memo {
-            command: "true".to_string(),
+            cmd: vec!["true".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -212,7 +212,7 @@ mod tests {
 
         let digest = "binary123";
         let memo = Memo {
-            command: "binary".to_string(),
+            cmd: vec!["binary".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -244,14 +244,14 @@ mod tests {
         let digest2 = "multi2";
 
         let memo1 = Memo {
-            command: "echo one".to_string(),
+            cmd: vec!["echo".to_string(), "one".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest1.to_string(),
         };
 
         let memo2 = Memo {
-            command: "echo two".to_string(),
+            cmd: vec!["echo".to_string(), "two".to_string()],
             exit_code: 1,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest2.to_string(),
@@ -263,8 +263,8 @@ mod tests {
         let (read1, out1, err1) = read_memo(&cache_dir, digest1).unwrap();
         let (read2, out2, err2) = read_memo(&cache_dir, digest2).unwrap();
 
-        assert_eq!(read1.command, "echo one");
-        assert_eq!(read2.command, "echo two");
+        assert_eq!(read1.cmd, vec!["echo", "one"]);
+        assert_eq!(read2.cmd, vec!["echo", "two"]);
         assert_eq!(out1, b"one\n");
         assert_eq!(out2, b"two\n");
         assert_eq!(err1, b"");
@@ -278,7 +278,7 @@ mod tests {
 
         let digest = "names123";
         let memo = Memo {
-            command: "test".to_string(),
+            cmd: vec!["test".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -310,7 +310,7 @@ mod tests {
 
         let digest = "large123";
         let memo = Memo {
-            command: "large".to_string(),
+            cmd: vec!["large".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -333,7 +333,7 @@ mod tests {
 
         let digest = "stream123";
         let memo = Memo {
-            command: "test".to_string(),
+            cmd: vec!["test".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -353,7 +353,7 @@ mod tests {
 
         let digest = "stream456";
         let memo = Memo {
-            command: "test".to_string(),
+            cmd: vec!["test".to_string()],
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -373,7 +373,7 @@ mod tests {
 
         let digest = "meta123";
         let memo = Memo {
-            command: "echo test".to_string(),
+            cmd: vec!["echo".to_string(), "test".to_string()],
             exit_code: 42,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -382,7 +382,7 @@ mod tests {
         write_memo(&cache_dir, digest, &memo, b"large output here", b"errors").unwrap();
 
         let read_meta = read_memo_metadata(&cache_dir, digest).unwrap();
-        assert_eq!(read_meta.command, "echo test");
+        assert_eq!(read_meta.cmd, vec!["echo", "test"]);
         assert_eq!(read_meta.exit_code, 42);
         assert_eq!(read_meta.digest, digest);
     }

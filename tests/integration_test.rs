@@ -374,8 +374,11 @@ fn test_cache_file_structure() {
     let json_content = env.read_cache_file(&json_file);
     let json: serde_json::Value = serde_json::from_slice(&json_content).unwrap();
 
-    assert!(json["command"].is_string());
-    assert_eq!(json["command"].as_str().unwrap(), "echo hello");
+    assert!(json["cmd"].is_array());
+    assert_eq!(json["cmd"].as_array().unwrap(), &vec![
+        serde_json::Value::String("echo".into()),
+        serde_json::Value::String("hello".into()),
+    ]);
     assert!(json["exit_code"].is_number());
     assert_eq!(json["exit_code"].as_i64().unwrap(), 0);
     assert!(json["timestamp"].is_string());
