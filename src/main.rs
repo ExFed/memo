@@ -46,7 +46,7 @@ fn run() -> io::Result<()> {
     // Build command string for display and compute digest from argv.
     let command_string = build_command_string(&args.command);
     let digest = compute_digest_for_args(&args.command)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        .map_err(io::Error::other)?;
 
     // Check if memo exists
     if memo_complete(&cache_dir, &digest) {
@@ -112,7 +112,7 @@ fn run() -> io::Result<()> {
 
                     // Write metadata to JSON (only if it doesn't already exist)
                     let json = serde_json::to_string_pretty(&memo)
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                        .map_err(io::Error::other)?;
 
                     let mut opts = std::fs::OpenOptions::new();
                     opts.write(true).create_new(true);
