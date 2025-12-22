@@ -31,11 +31,6 @@ pub fn ensure_cache_dir(cache_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-pub fn memo_exists(cache_dir: &Path, digest: &str) -> bool {
-    cache_dir.join(format!("{}.json", digest)).exists()
-}
-
 pub fn memo_complete(cache_dir: &Path, digest: &str) -> bool {
     let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
     json_path.exists() && out_path.exists() && err_path.exists()
@@ -229,25 +224,6 @@ mod tests {
         let (_, stdout, stderr) = read_memo(&cache_dir, digest).unwrap();
         assert_eq!(stdout, binary_data);
         assert_eq!(stderr, binary_data);
-    }
-
-    #[test]
-    fn test_memo_exists() {
-        let (_temp, cache_dir) = setup_test_cache();
-        ensure_cache_dir(&cache_dir).unwrap();
-
-        let digest = "exists123";
-        assert!(!memo_exists(&cache_dir, digest));
-
-        let memo = Memo {
-            command: "test".to_string(),
-            exit_code: 0,
-            timestamp: "2025-12-22T01:51:52.369Z".to_string(),
-            digest: digest.to_string(),
-        };
-
-        write_memo(&cache_dir, digest, &memo, b"", b"").unwrap();
-        assert!(memo_exists(&cache_dir, digest));
     }
 
     #[test]

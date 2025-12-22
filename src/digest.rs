@@ -2,14 +2,6 @@
 
 use sha2::{Digest, Sha256};
 
-#[cfg(test)]
-pub fn compute_digest(input: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(result)
-}
-
 pub fn compute_digest_for_args(args: &[String]) -> Result<String, serde_json::Error> {
     // Hash a canonical encoding of argv to avoid collisions like:
     // ["echo", "a b"] vs ["echo", "a", "b"].
@@ -23,86 +15,88 @@ pub fn compute_digest_for_args(args: &[String]) -> Result<String, serde_json::Er
 #[cfg(test)]
 mod tests {
     use super::*;
+    use shell_words::split;
+
+    fn digest_for_args(args: &[String]) -> String {
+        compute_digest_for_args(args).expect("failed to compute digest")
+    }
+
+    fn digest_for_command(command: &str) -> String {
+        let args = split(command).expect("failed to parse command");
+        digest_for_args(&args)
+    }
 
     #[test]
-    fn test_digest_same_input_same_output() {
-        let digest1 = compute_digest("echo hello");
-        let digest2 = compute_digest("echo hello");
+    fn test_digest_same_command_same_output() {
+        let digest1 = digest_for_command("echo hello");
+        let digest2 = digest_for_command("echo hello");
         assert_eq!(digest1, digest2);
     }
 
     #[test]
-    fn test_digest_different_input_different_output() {
-        let digest1 = compute_digest("echo hello");
-        let digest2 = compute_digest("echo world");
+    fn test_digest_different_commands_different_output() {
+        let digest1 = digest_for_command("echo hello");
+        let digest2 = digest_for_command("echo world");
         assert_ne!(digest1, digest2);
     }
 
     #[test]
     fn test_digest_format() {
-        let digest = compute_digest("test");
-        // SHA-256 produces 64 hex characters
+        let digest = digest_for_command("echo test");
         assert_eq!(digest.len(), 64);
         // Should only contain hex characters
         assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
-    fn test_digest_whitespace_sensitive() {
-        let digest1 = compute_digest("echo hello");
-        let digest2 = compute_digest("echo  hello"); // two spaces
-        assert_ne!(digest1, digest2);
+    fn test_digest_whitespace_collapses() {
+        let digest1 = digest_for_command("echo   hello");
+        let digest2 = digest_for_command("echo hello");
+        assert_eq!(digest1, digest2);
     }
 
     #[test]
     fn test_digest_order_sensitive() {
-        let digest1 = compute_digest("echo hello world");
-        let digest2 = compute_digest("echo world hello");
+        let digest1 = digest_for_args(&vec!["echo".into(), "hello".into(), "world".into()]);
+        let digest2 = digest_for_args(&vec!["echo".into(), "world".into(), "hello".into()]);
         assert_ne!(digest1, digest2);
     }
 
     #[test]
-    fn test_digest_empty_string() {
-        let digest = compute_digest("");
+    fn test_digest_empty_args_known_value() {
+        let digest = digest_for_command("");
         assert_eq!(digest.len(), 64);
-        // SHA-256 of empty string
-        assert_eq!(
-            digest,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
+        assert_eq!(digest, "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945");
     }
 
     #[test]
-    fn test_digest_special_characters() {
-        let digest1 = compute_digest("echo \"hello\" 'world' $USER");
-        let digest2 = compute_digest("echo \"hello\" 'world' $USER");
-        assert_eq!(digest1, digest2);
-    }
-
-    #[test]
-    fn test_digest_multiline() {
-        let digest1 = compute_digest("echo hello\necho world");
-        let digest2 = compute_digest("echo hello\necho world");
-        assert_eq!(digest1, digest2);
-    }
-
-    #[test]
-    fn test_digest_known_value() {
-        // Test against a known SHA-256 value
-        let digest = compute_digest("hello");
-        assert_eq!(
-            digest,
-            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-        );
+    fn test_digest_quoting_changes_arguments() {
+        let quoted = digest_for_command("echo 'hello world'");
+        let unquoted = digest_for_command("echo hello world");
+        assert_ne!(quoted, unquoted);
     }
 
     #[test]
     fn test_digest_args_avoids_join_collisions() {
-        let a = vec!["echo".to_string(), "a b".to_string()];
-        let b = vec!["echo".to_string(), "a".to_string(), "b".to_string()];
+        let quoted = digest_for_command("echo 'a b'");
+        let split_args = digest_for_command("echo a b");
+        assert_ne!(quoted, split_args);
+    }
 
-        let da = compute_digest_for_args(&a).unwrap();
-        let db = compute_digest_for_args(&b).unwrap();
-        assert_ne!(da, db);
+    #[test]
+    fn test_digest_known_value_for_echo_hello() {
+        let digest = digest_for_args(&vec!["echo".into(), "hello".into()]);
+
+        assert_eq!(
+            digest,
+            "8b7f749f4aa4672a7feec75fdc79f1fb5aa71f8177a667b94e89a92c9a54714b"
+        );
+    }
+
+    #[test]
+    fn test_digest_special_characters_are_preserved() {
+        let digest1 = digest_for_command("echo \"hello\" 'world' $USER");
+        let digest2 = digest_for_command("echo \"hello\" 'world' $USER");
+        assert_eq!(digest1, digest2);
     }
 }
