@@ -167,6 +167,7 @@ mod tests {
         let digest = "abc123";
         let memo = Memo {
             cmd: vec!["echo".to_string(), "test".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -193,6 +194,7 @@ mod tests {
         let digest = "empty123";
         let memo = Memo {
             cmd: vec!["true".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -213,6 +215,7 @@ mod tests {
         let digest = "binary123";
         let memo = Memo {
             cmd: vec!["binary".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -245,6 +248,7 @@ mod tests {
 
         let memo1 = Memo {
             cmd: vec!["echo".to_string(), "one".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest1.to_string(),
@@ -252,6 +256,7 @@ mod tests {
 
         let memo2 = Memo {
             cmd: vec!["echo".to_string(), "two".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 1,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest2.to_string(),
@@ -279,6 +284,7 @@ mod tests {
         let digest = "names123";
         let memo = Memo {
             cmd: vec!["test".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -311,6 +317,7 @@ mod tests {
         let digest = "large123";
         let memo = Memo {
             cmd: vec!["large".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -334,6 +341,7 @@ mod tests {
         let digest = "stream123";
         let memo = Memo {
             cmd: vec!["test".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -354,6 +362,7 @@ mod tests {
         let digest = "stream456";
         let memo = Memo {
             cmd: vec!["test".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 0,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),
@@ -374,6 +383,7 @@ mod tests {
         let digest = "meta123";
         let memo = Memo {
             cmd: vec!["echo".to_string(), "test".to_string()],
+            cwd: "/test/dir".to_string(),
             exit_code: 42,
             timestamp: "2025-12-22T01:51:52.369Z".to_string(),
             digest: digest.to_string(),

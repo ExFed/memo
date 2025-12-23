@@ -4,8 +4,8 @@ mod executor;
 mod memo;
 
 use cache::{
-    ensure_cache_dir, get_cache_dir, get_cache_paths, memo_complete, purge_memo, read_memo_metadata,
-    stream_stderr, stream_stdout, try_acquire_lock,
+    ensure_cache_dir, get_cache_dir, get_cache_paths, memo_complete, purge_memo,
+    read_memo_metadata, stream_stderr, stream_stdout, try_acquire_lock,
 };
 use chrono::Utc;
 use clap::Parser;
@@ -43,16 +43,18 @@ fn run() -> io::Result<()> {
     let cache_dir = get_cache_dir()?;
     ensure_cache_dir(&cache_dir)?;
 
+    // Get current working directory
+    let cwd = std::env::current_dir()?.to_string_lossy().to_string();
+
     // Build command string for display and compute digest from argv.
     let command_string = build_command_string(&args.command);
-    let digest = compute_digest_for_args(&args.command)
-        .map_err(io::Error::other)?;
+    let digest = compute_digest_for_args(&args.command, &cwd).map_err(io::Error::other)?;
 
     // Check if memo exists
     if memo_complete(&cache_dir, &digest) {
         // Cache hit - replay
         if args.verbose {
-            eprintln!(":: memo :: Replaying memoized result for: {}", command_string);
+            eprintln!(":: memo :: hit `{command_string}` => {digest}");
         }
 
         // Read metadata
@@ -67,7 +69,7 @@ fn run() -> io::Result<()> {
     } else {
         // Cache miss - execute and memoize
         if args.verbose {
-            eprintln!(":: memo :: Executing and memoizing: {}", command_string);
+            eprintln!(":: memo :: miss `{command_string}` => {digest}");
         }
 
         // Best-effort wait if another process is currently memoizing the same digest.
@@ -78,10 +80,7 @@ fn run() -> io::Result<()> {
                     // If we acquired the lock but the memo became complete meanwhile, just replay.
                     if memo_complete(&cache_dir, &digest) {
                         if args.verbose {
-                            eprintln!(
-                                ":: memo :: Replaying memoized result for: {}",
-                                command_string
-                            );
+                            eprintln!(":: memo :: hit `{command_string}` => {digest}");
                         }
                         let memo = read_memo_metadata(&cache_dir, &digest)?;
                         stream_stdout(&cache_dir, &digest, io::stdout())?;
@@ -105,14 +104,14 @@ fn run() -> io::Result<()> {
                     // Create memo metadata
                     let memo = Memo {
                         cmd: args.command.clone(),
+                        cwd: cwd.clone(),
                         exit_code: result.exit_code,
                         timestamp: Utc::now().to_rfc3339(),
                         digest: digest.clone(),
                     };
 
                     // Write metadata to JSON (only if it doesn't already exist)
-                    let json = serde_json::to_string_pretty(&memo)
-                        .map_err(io::Error::other)?;
+                    let json = serde_json::to_string_pretty(&memo).map_err(io::Error::other)?;
 
                     let mut opts = std::fs::OpenOptions::new();
                     opts.write(true).create_new(true);
@@ -138,10 +137,7 @@ fn run() -> io::Result<()> {
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                     if memo_complete(&cache_dir, &digest) {
                         if args.verbose {
-                            eprintln!(
-                                ":: memo :: Replaying memoized result for: {}",
-                                command_string
-                            );
+                            eprintln!(":: memo :: hit `{command_string}` => {digest}");
                         }
                         let memo = read_memo_metadata(&cache_dir, &digest)?;
                         stream_stdout(&cache_dir, &digest, io::stdout())?;

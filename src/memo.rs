@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Memo {
     pub cmd: Vec<String>,
+    pub cwd: String,
     pub exit_code: i32,
     pub timestamp: String,
     pub digest: String,
@@ -23,6 +24,7 @@ mod tests {
     fn test_memo_serialization() {
         let memo = Memo {
             cmd: vec!["echo".to_string(), "hello".to_string()],
+            cwd: "/test/path".to_string(),
             exit_code: 0,
             timestamp: ts(),
             digest: "abc123".to_string(),
@@ -32,6 +34,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(value["cmd"], json!(["echo", "hello"]));
+        assert_eq!(value["cwd"], json!("/test/path"));
         assert_eq!(value["exit_code"], json!(0));
         assert_eq!(value["digest"], json!("abc123"));
     }
@@ -40,6 +43,7 @@ mod tests {
     fn test_memo_deserialization() {
         let json = r#"{
             "cmd": ["echo", "test"],
+            "cwd": "/some/dir",
             "exit_code": 42,
             "timestamp": "2025-12-22T01:51:52.369Z",
             "digest": "def456"
@@ -47,6 +51,7 @@ mod tests {
 
         let memo: Memo = serde_json::from_str(json).unwrap();
         assert_eq!(memo.cmd, vec!["echo", "test"]);
+        assert_eq!(memo.cwd, "/some/dir");
         assert_eq!(memo.exit_code, 42);
         assert_eq!(memo.digest, "def456");
     }
@@ -55,6 +60,7 @@ mod tests {
     fn test_memo_roundtrip() {
         let original = Memo {
             cmd: vec!["ls".to_string(), "-la".to_string()],
+            cwd: "/home/user".to_string(),
             exit_code: 1,
             timestamp: ts(),
             digest: "xyz789".to_string(),
@@ -70,6 +76,7 @@ mod tests {
     fn test_memo_with_special_characters() {
         let memo = Memo {
             cmd: vec!["echo".to_string(), "\"hello\" 'world' $USER".to_string()],
+            cwd: "/tmp".to_string(),
             exit_code: 0,
             timestamp: ts(),
             digest: "special123".to_string(),
@@ -85,6 +92,7 @@ mod tests {
     fn test_memo_negative_exit_code() {
         let memo = Memo {
             cmd: vec!["test".to_string()],
+            cwd: "/".to_string(),
             exit_code: -1,
             timestamp: ts(),
             digest: "neg123".to_string(),
@@ -100,6 +108,7 @@ mod tests {
     fn test_memo_multiline_command() {
         let memo = Memo {
             cmd: vec!["sh".to_string(), "-c".to_string(), "echo hello\necho world".to_string()],
+            cwd: "/var".to_string(),
             exit_code: 0,
             timestamp: ts(),
             digest: "multi123".to_string(),

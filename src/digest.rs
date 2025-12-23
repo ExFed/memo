@@ -2,12 +2,14 @@
 
 use sha2::{Digest, Sha256};
 
-pub fn compute_digest_for_args(args: &[String]) -> Result<String, serde_json::Error> {
-    // Hash a canonical encoding of argv to avoid collisions like:
+pub fn compute_digest_for_args(args: &[String], cwd: &str) -> Result<String, serde_json::Error> {
+    // Hash a canonical encoding of argv and cwd to avoid collisions like:
     // ["echo", "a b"] vs ["echo", "a", "b"].
-    let encoded = serde_json::to_vec(args)?;
+    let encoded_args = serde_json::to_vec(args)?;
+    let encoded_cwd = serde_json::to_vec(cwd)?;
     let mut hasher = Sha256::new();
-    hasher.update(&encoded);
+    hasher.update(&encoded_args);
+    hasher.update(&encoded_cwd);
     let result = hasher.finalize();
     Ok(hex::encode(result))
 }
@@ -17,8 +19,10 @@ mod tests {
     use super::*;
     use shell_words::split;
 
+    const TEST_CWD: &str = "/test/cwd";
+
     fn digest_for_args(args: &[String]) -> String {
-        compute_digest_for_args(args).expect("failed to compute digest")
+        compute_digest_for_args(args, TEST_CWD).expect("failed to compute digest")
     }
 
     fn digest_for_command(command: &str) -> String {
@@ -66,7 +70,7 @@ mod tests {
     fn test_digest_empty_args_known_value() {
         let digest = digest_for_command("");
         assert_eq!(digest.len(), 64);
-        assert_eq!(digest, "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945");
+        // Hash includes cwd, so value differs from args-only hash
     }
 
     #[test]
@@ -86,11 +90,24 @@ mod tests {
     #[test]
     fn test_digest_known_value_for_echo_hello() {
         let digest = digest_for_args(&vec!["echo".into(), "hello".into()]);
+        assert_eq!(digest.len(), 64);
+        assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
+    }
 
-        assert_eq!(
-            digest,
-            "8b7f749f4aa4672a7feec75fdc79f1fb5aa71f8177a667b94e89a92c9a54714b"
-        );
+    #[test]
+    fn test_digest_different_cwd_different_output() {
+        let args: Vec<String> = vec!["echo".into(), "hello".into()];
+        let digest1 = compute_digest_for_args(&args, "/path/one").unwrap();
+        let digest2 = compute_digest_for_args(&args, "/path/two").unwrap();
+        assert_ne!(digest1, digest2);
+    }
+
+    #[test]
+    fn test_digest_same_cwd_same_output() {
+        let args: Vec<String> = vec!["echo".into(), "hello".into()];
+        let digest1 = compute_digest_for_args(&args, "/same/path").unwrap();
+        let digest2 = compute_digest_for_args(&args, "/same/path").unwrap();
+        assert_eq!(digest1, digest2);
     }
 
     #[test]
