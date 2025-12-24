@@ -1,12 +1,15 @@
 //! Command execution with output streaming
 //!
 //! This module handles the execution of shell commands and streaming their output
-//! directly to cache files. This avoids loading large outputs into memory.
+//! directly to cache files and console simultaneously. This avoids loading large
+//! outputs into memory while providing real-time console feedback.
 
 use crate::constants::FILE_PERMISSIONS;
 use crate::error::{MemoError, Result};
+use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
-use std::path::Path;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 #[cfg(unix)]
@@ -16,6 +19,74 @@ use std::os::unix::fs::OpenOptionsExt;
 pub struct ExecutionResult {
     /// The exit code returned by the command
     pub exit_code: i32,
+    /// Error encountered while writing to stdout file (if any)
+    pub stdout_error: Option<PathBuf>,
+    /// Error encountered while writing to stderr file (if any)
+    pub stderr_error: Option<PathBuf>,
+}
+
+/// A writer that duplicates writes to two destinations
+///
+/// TeeWriter writes to both a file and the console simultaneously, allowing
+/// real-time output while caching. If file writes fail, it continues with
+/// console output and stores the error for later reporting.
+struct TeeWriter<W: Write> {
+    file: File,
+    console: W,
+    file_path: PathBuf,
+    error: RefCell<Option<io::Error>>,
+}
+
+impl<W: Write> TeeWriter<W> {
+    fn new(file: File, console: W, file_path: PathBuf) -> Self {
+        Self {
+            file,
+            console,
+            file_path,
+            error: RefCell::new(None),
+        }
+    }
+
+    fn has_error(&self) -> bool {
+        self.error.borrow().is_some()
+    }
+
+    fn take_error_path(&self) -> Option<PathBuf> {
+        if self.has_error() {
+            Some(self.file_path.clone())
+        } else {
+            None
+        }
+    }
+}
+
+impl<W: Write> Write for TeeWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // Try to write to file first
+        let file_result = self.file.write_all(buf);
+
+        // Always write to console
+        let console_result = self.console.write_all(buf);
+
+        // Store file error if it occurred
+        if let Err(e) = file_result {
+            if self.error.borrow().is_none() {
+                *self.error.borrow_mut() = Some(e);
+            }
+        }
+
+        // Return console result (file errors are stored, not returned)
+        console_result?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        // Try to flush file, but don't fail on error
+        let _ = self.file.flush();
+
+        // Always flush console
+        self.console.flush()
+    }
 }
 
 /// Build a display string from command arguments
@@ -46,10 +117,12 @@ fn create_secure_file(path: &Path) -> std::io::Result<File> {
     opts.open(path)
 }
 
-/// Execute a command and stream its output directly to files
+/// Execute a command and stream its output directly to files and console
 ///
 /// This function creates the output files with secure permissions and streams
-/// stdout and stderr directly from the command without buffering in memory.
+/// stdout and stderr simultaneously to both files and console in real-time.
+/// If file writes fail, the command continues with console-only output and
+/// errors are reported in the result.
 ///
 /// # Arguments
 ///
@@ -59,7 +132,7 @@ fn create_secure_file(path: &Path) -> std::io::Result<File> {
 ///
 /// # Returns
 ///
-/// Returns an `ExecutionResult` containing the exit code.
+/// Returns an `ExecutionResult` containing the exit code and any file write errors.
 ///
 /// # Errors
 ///
@@ -92,15 +165,39 @@ pub fn execute_and_stream(
     let stdout_file = create_secure_file(stdout_path)?;
     let stderr_file = create_secure_file(stderr_path)?;
 
-    let status = Command::new(args[0])
-        .args(&args[1..])
-        .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
-        .status()?;
+    // Create TeeWriters that write to both file and console
+    let mut stdout_tee = TeeWriter::new(stdout_file, io::stdout(), stdout_path.to_path_buf());
+    let mut stderr_tee = TeeWriter::new(stderr_file, io::stderr(), stderr_path.to_path_buf());
 
+    // Spawn the command with piped stdout/stderr
+    let mut child = Command::new(args[0])
+        .args(&args[1..])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    // Take the stdout and stderr handles
+    let mut child_stdout = child.stdout.take().expect("Failed to capture stdout");
+    let mut child_stderr = child.stderr.take().expect("Failed to capture stderr");
+
+    // Copy from child's stdout/stderr to our TeeWriters
+    // We ignore copy errors since TeeWriter handles them internally
+    let _ = io::copy(&mut child_stdout, &mut stdout_tee);
+    let _ = io::copy(&mut child_stderr, &mut stderr_tee);
+
+    // Wait for the command to complete
+    let status = child.wait()?;
     let exit_code = status.code().unwrap_or(-1);
 
-    Ok(ExecutionResult { exit_code })
+    // Collect any file write errors
+    let stdout_error = stdout_tee.take_error_path();
+    let stderr_error = stderr_tee.take_error_path();
+
+    Ok(ExecutionResult {
+        exit_code,
+        stdout_error,
+        stderr_error,
+    })
 }
 
 /// Execute a command and stream output directly to stdout/stderr
@@ -129,18 +226,20 @@ pub fn execute_and_stream(
 /// let result = execute_direct(&["echo", "hello"]).expect("Command failed");
 /// assert_eq!(result.exit_code, 0);
 /// ```
-pub fn execute_bypass(args: &[&str]) -> Result<ExecutionResult> {
+pub fn execute_direct(args: &[&str]) -> Result<ExecutionResult> {
     if args.is_empty() {
         return Err(MemoError::InvalidCommand("No command provided".to_string()));
     }
 
-    let status = Command::new(args[0])
-        .args(&args[1..])
-        .status()?;
+    let status = Command::new(args[0]).args(&args[1..]).status()?;
 
     let exit_code = status.code().unwrap_or(-1);
 
-    Ok(ExecutionResult { exit_code })
+    Ok(ExecutionResult {
+        exit_code,
+        stdout_error: None,
+        stderr_error: None,
+    })
 }
 
 /// Execute command for testing (keeps output in memory)

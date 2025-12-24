@@ -55,7 +55,7 @@ use clap::Parser;
 use constants::{LOCK_WAIT_INTERVAL_MS, LOCK_WAIT_TIMEOUT_SECS};
 use digest::compute_digest_for_args;
 use error::{MemoError, Result};
-use executor::{build_command_string, execute_and_stream, execute_bypass};
+use executor::{build_command_string, execute_and_stream, execute_direct};
 use memo::Memo;
 use std::io;
 use std::process;
@@ -94,7 +94,7 @@ fn run() -> Result<()> {
         let cmd_args: Vec<&str> = args.command.iter().map(|s| s.as_str()).collect();
 
         // Execute directly without caching
-        let result = execute_bypass(&cmd_args)?;
+        let result = execute_direct(&cmd_args)?;
         process::exit(result.exit_code);
     }
 
@@ -157,8 +157,16 @@ fn run() -> Result<()> {
                     // Convert Vec<String> to Vec<&str>
                     let cmd_args: Vec<&str> = args.command.iter().map(|s| s.as_str()).collect();
 
-                    // Execute command and stream to files
+                    // Execute command and stream to files AND console simultaneously
                     let result = execute_and_stream(&cmd_args, &out_path, &err_path)?;
+
+                    // Report any file write errors
+                    if let Some(path) = &result.stdout_error {
+                        eprintln!(":: memo :: ERROR: could not write {}", path.display());
+                    }
+                    if let Some(path) = &result.stderr_error {
+                        eprintln!(":: memo :: ERROR: could not write {}", path.display());
+                    }
 
                     // Create memo metadata
                     let memo = Memo {
@@ -178,11 +186,7 @@ fn run() -> Result<()> {
                         f.write_all(json.as_bytes())?;
                     }
 
-                    // Stream output to stdout/stderr
-                    stream_stdout(&cache_dir, &digest, io::stdout())?;
-                    stream_stderr(&cache_dir, &digest, io::stderr())?;
-
-                    // Exit with command's exit code
+                    // Exit with command's exit code (output already streamed to console)
                     drop(lock);
                     process::exit(result.exit_code);
                 }
