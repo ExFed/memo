@@ -85,7 +85,7 @@ struct Cli {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("Error: {}", e);
+        eprintln!(":: memo :: ERROR: {}", e);
         process::exit(1);
     }
 }
