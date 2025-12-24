@@ -1,5 +1,21 @@
-// Unit tests for the cache module
+//! Cache management for memoized command execution
+//!
+//! This module handles all file I/O operations for the memo cache, including:
+//! - Cache directory management
+//! - File path generation
+//! - Memo metadata storage and retrieval
+//! - Output streaming
+//! - Lock acquisition for concurrent safety
+//!
+//! # Storage Structure
+//!
+//! Each memoized command produces three files:
+//! - `<digest>.json` - Metadata (command, exit code, timestamp, digest)
+//! - `<digest>.out` - Raw stdout bytes
+//! - `<digest>.err` - Raw stderr bytes
 
+use crate::constants::{CACHE_DIR_PERMISSIONS, FILE_PERMISSIONS};
+use crate::error::{MemoError, Result};
 use crate::memo::Memo;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, copy};
@@ -8,29 +24,47 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-pub fn get_cache_dir() -> io::Result<PathBuf> {
+/// Get the cache directory path
+///
+/// Respects `$XDG_CACHE_HOME` environment variable, falling back to `~/.cache`.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use memo::cache::get_cache_dir;
+/// let cache_dir = get_cache_dir().expect("Failed to get cache directory");
+/// println!("Cache directory: {:?}", cache_dir);
+/// ```
+pub fn get_cache_dir() -> Result<PathBuf> {
     let base = if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
         PathBuf::from(xdg)
     } else {
         dirs::home_dir()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Cannot find home directory"))?
+            .ok_or(MemoError::HomeNotFound)?
             .join(".cache")
     };
     Ok(base.join("memo"))
 }
 
+/// Ensure the cache directory exists with appropriate permissions
+///
+/// Creates the directory if it doesn't exist, and sets secure permissions (0o700)
+/// on Unix systems.
 pub fn ensure_cache_dir(cache_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(cache_dir)?;
 
     #[cfg(unix)]
     {
-        let perm = fs::Permissions::from_mode(0o700);
+        let perm = fs::Permissions::from_mode(CACHE_DIR_PERMISSIONS);
         let _ = fs::set_permissions(cache_dir, perm);
     }
 
     Ok(())
 }
 
+/// Check if a memo is complete (all three cache files exist)
+///
+/// Returns `true` if the `.json`, `.out`, and `.err` files all exist.
 pub fn memo_complete(cache_dir: &Path, digest: &str) -> bool {
     let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
     json_path.exists() && out_path.exists() && err_path.exists()
@@ -50,6 +84,22 @@ pub fn get_cache_paths(cache_dir: &Path, digest: &str) -> (PathBuf, PathBuf, Pat
     (json_path, out_path, err_path)
 }
 
+/// Create a new file with secure permissions (owner read/write only)
+///
+/// This helper ensures consistent file creation across the codebase with
+/// appropriate security permissions on Unix systems.
+pub fn create_secure_file(path: &Path) -> io::Result<File> {
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        opts.mode(FILE_PERMISSIONS);
+    }
+
+    opts.open(path)
+}
+
 pub struct CacheLock {
     path: PathBuf,
 }
@@ -62,16 +112,7 @@ impl Drop for CacheLock {
 
 pub fn try_acquire_lock(cache_dir: &Path, digest: &str) -> io::Result<CacheLock> {
     let lock_path = cache_dir.join(format!("{}.lock", digest));
-
-    let mut opts = OpenOptions::new();
-    opts.write(true).create_new(true);
-
-    #[cfg(unix)]
-    {
-        opts.mode(0o600);
-    }
-
-    let _file = opts.open(&lock_path)?;
+    let _file = create_secure_file(&lock_path)?;
     Ok(CacheLock { path: lock_path })
 }
 
@@ -106,7 +147,11 @@ pub fn read_memo(cache_dir: &Path, digest: &str) -> io::Result<(Memo, Vec<u8>, V
 }
 
 /// Stream cached stdout to the given writer
-pub fn stream_stdout<W: io::Write>(cache_dir: &Path, digest: &str, mut writer: W) -> io::Result<()> {
+pub fn stream_stdout<W: io::Write>(
+    cache_dir: &Path,
+    digest: &str,
+    mut writer: W,
+) -> io::Result<()> {
     let (_, out_path, _) = get_cache_paths(cache_dir, digest);
     let mut file = File::open(out_path)?;
     copy(&mut file, &mut writer)?;
@@ -114,7 +159,11 @@ pub fn stream_stdout<W: io::Write>(cache_dir: &Path, digest: &str, mut writer: W
 }
 
 /// Stream cached stderr to the given writer
-pub fn stream_stderr<W: io::Write>(cache_dir: &Path, digest: &str, mut writer: W) -> io::Result<()> {
+pub fn stream_stderr<W: io::Write>(
+    cache_dir: &Path,
+    digest: &str,
+    mut writer: W,
+) -> io::Result<()> {
     let (_, _, err_path) = get_cache_paths(cache_dir, digest);
     let mut file = File::open(err_path)?;
     copy(&mut file, &mut writer)?;

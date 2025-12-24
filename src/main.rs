@@ -1,15 +1,60 @@
+//! # Memo - Command Memoization Tool
+//!
+//! Memo is a command-line tool that memoizes (caches) shell command execution results.
+//! When you run a command through memo, it stores the stdout, stderr, and exit code.
+//! Subsequent executions of the same command will replay the cached results instantly
+//! without re-running the command.
+//!
+//! ## How It Works
+//!
+//! - **Cache Key**: SHA-256 hash of the command arguments and current working directory
+//! - **Storage**: Three separate files per memoized command:
+//!   - `<digest>.json` - Metadata (command, exit code, timestamp)
+//!   - `<digest>.out` - Captured stdout
+//!   - `<digest>.err` - Captured stderr
+//! - **Location**: `$XDG_CACHE_HOME/memo/` (defaults to `~/.cache/memo/`)
+//!
+//! ## Usage Examples
+//!
+//! ```bash
+//! # First run executes the command
+//! memo echo "Hello, World!"
+//!
+//! # Second run replays from cache (instant)
+//! memo echo "Hello, World!"
+//!
+//! # Verbose mode shows cache hits/misses
+//! memo -v ls -la /etc
+//!
+//! # Commands with different arguments create separate cache entries
+//! memo echo "foo"
+//! memo echo "bar"
+//! ```
+//!
+//! ## Features
+//!
+//! - Preserves exact stdout, stderr, and exit codes
+//! - Handles binary data correctly
+//! - Streaming architecture for memory efficiency
+//! - Lock-based concurrency control
+//! - Secure file permissions on Unix systems
+
 mod cache;
+mod constants;
 mod digest;
+mod error;
 mod executor;
 mod memo;
 
 use cache::{
-    ensure_cache_dir, get_cache_dir, get_cache_paths, memo_complete, purge_memo,
-    read_memo_metadata, stream_stderr, stream_stdout, try_acquire_lock,
+    create_secure_file, ensure_cache_dir, get_cache_dir, get_cache_paths, memo_complete,
+    purge_memo, read_memo_metadata, stream_stderr, stream_stdout, try_acquire_lock,
 };
 use chrono::Utc;
 use clap::Parser;
+use constants::{LOCK_WAIT_INTERVAL_MS, LOCK_WAIT_TIMEOUT_SECS};
 use digest::compute_digest_for_args;
+use error::{MemoError, Result};
 use executor::{build_command_string, execute_and_stream};
 use memo::Memo;
 use std::io;
@@ -36,7 +81,7 @@ fn main() {
     }
 }
 
-fn run() -> io::Result<()> {
+fn run() -> Result<()> {
     let args = Cli::parse();
 
     // Get cache directory
@@ -48,7 +93,7 @@ fn run() -> io::Result<()> {
 
     // Build command string for display and compute digest from argv.
     let command_string = build_command_string(&args.command);
-    let digest = compute_digest_for_args(&args.command, &cwd).map_err(io::Error::other)?;
+    let digest = compute_digest_for_args(&args.command, &cwd)?;
 
     // Check if memo exists
     if memo_complete(&cache_dir, &digest) {
@@ -73,7 +118,7 @@ fn run() -> io::Result<()> {
         }
 
         // Best-effort wait if another process is currently memoizing the same digest.
-        let wait_deadline = Instant::now() + Duration::from_secs(2);
+        let wait_deadline = Instant::now() + Duration::from_secs(LOCK_WAIT_TIMEOUT_SECS);
         loop {
             match try_acquire_lock(&cache_dir, &digest) {
                 Ok(lock) => {
@@ -111,18 +156,11 @@ fn run() -> io::Result<()> {
                     };
 
                     // Write metadata to JSON (only if it doesn't already exist)
-                    let json = serde_json::to_string_pretty(&memo).map_err(io::Error::other)?;
+                    let json = serde_json::to_string_pretty(&memo)?;
 
-                    let mut opts = std::fs::OpenOptions::new();
-                    opts.write(true).create_new(true);
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::OpenOptionsExt;
-                        opts.mode(0o600);
-                    }
                     {
                         use std::io::Write;
-                        let mut f = opts.open(json_path)?;
+                        let mut f = create_secure_file(&json_path)?;
                         f.write_all(json.as_bytes())?;
                     }
 
@@ -146,15 +184,12 @@ fn run() -> io::Result<()> {
                     }
 
                     if Instant::now() >= wait_deadline {
-                        return Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "Timed out waiting for memoization lock",
-                        ));
+                        return Err(MemoError::LockTimeout);
                     }
 
-                    std::thread::sleep(Duration::from_millis(25));
+                    std::thread::sleep(Duration::from_millis(LOCK_WAIT_INTERVAL_MS));
                 }
-                Err(e) => return Err(e),
+                Err(e) => return Err(MemoError::Io(e)),
             }
         }
     }

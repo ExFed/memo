@@ -1,8 +1,37 @@
-// Unit tests for the digest module
+//! Digest computation for cache key generation
+//!
+//! This module handles SHA-256 digest computation for command memoization.
+//! The digest includes both the command arguments and the current working directory
+//! to ensure different contexts produce different cache entries.
 
+use crate::error::Result;
 use sha2::{Digest, Sha256};
 
-pub fn compute_digest_for_args(args: &[String], cwd: &str) -> Result<String, serde_json::Error> {
+/// Compute SHA-256 digest for command arguments and working directory
+///
+/// The digest is computed from a JSON encoding of the arguments and working directory
+/// to avoid collisions. For example, `["echo", "a b"]` vs `["echo", "a", "b"]` will
+/// produce different digests.
+///
+/// # Arguments
+///
+/// * `args` - Command arguments (including the command itself)
+/// * `cwd` - Current working directory
+///
+/// # Returns
+///
+/// Returns a hex-encoded SHA-256 digest (64 characters).
+///
+/// # Examples
+///
+/// ```
+/// # use memo::digest::compute_digest_for_args;
+/// let args = vec!["echo".to_string(), "hello".to_string()];
+/// let digest = compute_digest_for_args(&args, "/home/user").unwrap();
+/// assert_eq!(digest.len(), 64);
+/// assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
+/// ```
+pub fn compute_digest_for_args(args: &[String], cwd: &str) -> Result<String> {
     // Hash a canonical encoding of argv and cwd to avoid collisions like:
     // ["echo", "a b"] vs ["echo", "a", "b"].
     let encoded_args = serde_json::to_vec(args)?;
@@ -61,8 +90,8 @@ mod tests {
 
     #[test]
     fn test_digest_order_sensitive() {
-        let digest1 = digest_for_args(&vec!["echo".into(), "hello".into(), "world".into()]);
-        let digest2 = digest_for_args(&vec!["echo".into(), "world".into(), "hello".into()]);
+        let digest1 = digest_for_args(&["echo".into(), "hello".into(), "world".into()]);
+        let digest2 = digest_for_args(&["echo".into(), "world".into(), "hello".into()]);
         assert_ne!(digest1, digest2);
     }
 
@@ -89,7 +118,7 @@ mod tests {
 
     #[test]
     fn test_digest_known_value_for_echo_hello() {
-        let digest = digest_for_args(&vec!["echo".into(), "hello".into()]);
+        let digest = digest_for_args(&["echo".into(), "hello".into()]);
         assert_eq!(digest.len(), 64);
         assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
     }

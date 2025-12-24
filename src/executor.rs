@@ -1,49 +1,177 @@
-// Unit tests for the executor module
+//! Command execution with output streaming
+//!
+//! This module handles the execution of shell commands and streaming their output
+//! directly to cache files. This avoids loading large outputs into memory.
 
-use std::fs::OpenOptions;
-use std::io;
+use crate::constants::FILE_PERMISSIONS;
+use crate::error::{MemoError, Result};
+use std::fs::{File, OpenOptions};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
+/// Result of command execution
 pub struct ExecutionResult {
+    /// The exit code returned by the command
     pub exit_code: i32,
 }
 
+/// Builder for command execution with output streaming
+///
+/// Provides a fluent API for configuring and executing commands.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use memo::executor::CommandExecutor;
+/// # use std::path::Path;
+/// let result = CommandExecutor::new()
+///     .args(&["echo", "hello"])
+///     .stdout_path(Path::new("/tmp/out.txt"))
+///     .stderr_path(Path::new("/tmp/err.txt"))
+///     .execute()
+///     .expect("Command failed");
+/// assert_eq!(result.exit_code, 0);
+/// ```
+#[allow(dead_code)] // Public API, used in tests
+pub struct CommandExecutor<'a> {
+    args: Option<&'a [&'a str]>,
+    stdout_path: Option<&'a Path>,
+    stderr_path: Option<&'a Path>,
+}
+
+#[allow(dead_code)] // Public API, used in tests
+impl<'a> CommandExecutor<'a> {
+    /// Create a new command executor builder
+    pub fn new() -> Self {
+        Self {
+            args: None,
+            stdout_path: None,
+            stderr_path: None,
+        }
+    }
+
+    /// Set the command and arguments
+    pub fn args(mut self, args: &'a [&'a str]) -> Self {
+        self.args = Some(args);
+        self
+    }
+
+    /// Set the path for stdout output
+    pub fn stdout_path(mut self, path: &'a Path) -> Self {
+        self.stdout_path = Some(path);
+        self
+    }
+
+    /// Set the path for stderr output
+    pub fn stderr_path(mut self, path: &'a Path) -> Self {
+        self.stderr_path = Some(path);
+        self
+    }
+
+    /// Execute the command with the configured parameters
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Args, stdout_path, or stderr_path are not set
+    /// - Command execution fails
+    pub fn execute(self) -> Result<ExecutionResult> {
+        let args = self
+            .args
+            .ok_or_else(|| MemoError::InvalidCommand("No command provided".to_string()))?;
+        let stdout_path = self
+            .stdout_path
+            .ok_or_else(|| MemoError::InvalidCommand("No stdout path provided".to_string()))?;
+        let stderr_path = self
+            .stderr_path
+            .ok_or_else(|| MemoError::InvalidCommand("No stderr path provided".to_string()))?;
+
+        execute_and_stream(args, stdout_path, stderr_path)
+    }
+}
+
+impl<'a> Default for CommandExecutor<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Build a display string from command arguments
+///
+/// Joins arguments with spaces for user-friendly display.
+///
+/// # Examples
+///
+/// ```
+/// # use memo::executor::build_command_string;
+/// let args = vec!["echo".to_string(), "hello".to_string()];
+/// assert_eq!(build_command_string(&args), "echo hello");
+/// ```
 pub fn build_command_string(args: &[String]) -> String {
     args.join(" ")
 }
 
-/// Execute command and stream output directly to files
+/// Create a new file with secure permissions (owner read/write only)
+fn create_secure_file(path: &Path) -> std::io::Result<File> {
+    let mut opts = OpenOptions::new();
+    opts.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        opts.mode(FILE_PERMISSIONS);
+    }
+
+    opts.open(path)
+}
+
+/// Execute a command and stream its output directly to files
+///
+/// This function creates the output files with secure permissions and streams
+/// stdout and stderr directly from the command without buffering in memory.
+///
+/// # Arguments
+///
+/// * `args` - Command and its arguments (first element is the command)
+/// * `stdout_path` - Path where stdout will be written
+/// * `stderr_path` - Path where stderr will be written
+///
+/// # Returns
+///
+/// Returns an `ExecutionResult` containing the exit code.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - No command is provided
+/// - File creation fails
+/// - Command execution fails
+///
+/// # Examples
+///
+/// ```no_run
+/// # use memo::executor::execute_and_stream;
+/// # use std::path::Path;
+/// let result = execute_and_stream(
+///     &["echo", "hello"],
+///     Path::new("/tmp/out.txt"),
+///     Path::new("/tmp/err.txt")
+/// ).expect("Command failed");
+/// assert_eq!(result.exit_code, 0);
+/// ```
 pub fn execute_and_stream(
     args: &[&str],
     stdout_path: &Path,
     stderr_path: &Path,
-) -> io::Result<ExecutionResult> {
+) -> Result<ExecutionResult> {
     if args.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "No command provided",
-        ));
+        return Err(MemoError::InvalidCommand("No command provided".to_string()));
     }
 
-    let mut stdout_opts = OpenOptions::new();
-    stdout_opts.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        stdout_opts.mode(0o600);
-    }
-    let stdout_file = stdout_opts.open(stdout_path)?;
-
-    let mut stderr_opts = OpenOptions::new();
-    stderr_opts.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        stderr_opts.mode(0o600);
-    }
-    let stderr_file = stderr_opts.open(stderr_path)?;
+    let stdout_file = create_secure_file(stdout_path)?;
+    let stderr_file = create_secure_file(stderr_path)?;
 
     let status = Command::new(args[0])
         .args(&args[1..])
@@ -58,10 +186,10 @@ pub fn execute_and_stream(
 
 /// Execute command for testing (keeps output in memory)
 #[cfg(test)]
-fn execute_command(args: &[&str]) -> io::Result<TestExecutionResult> {
+fn execute_command(args: &[&str]) -> std::io::Result<TestExecutionResult> {
     if args.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
             "No command provided",
         ));
     }
@@ -93,6 +221,23 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_builder_pattern() {
+        let temp_dir = TempDir::new().unwrap();
+        let stdout_path = temp_dir.path().join("out");
+        let stderr_path = temp_dir.path().join("err");
+
+        let result = CommandExecutor::new()
+            .args(&["echo", "builder test"])
+            .stdout_path(&stdout_path)
+            .stderr_path(&stderr_path)
+            .execute()
+            .unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(fs::read_to_string(&stdout_path).unwrap(), "builder test\n");
+    }
 
     #[test]
     fn test_execute_simple_command() {
@@ -197,7 +342,11 @@ mod tests {
 
         // Generate 1MB of output without holding it all in memory in the command
         let result = execute_and_stream(
-            &["sh", "-c", "dd if=/dev/zero bs=1024 count=1024 2>/dev/null | tr '\\0' 'A'"],
+            &[
+                "sh",
+                "-c",
+                "dd if=/dev/zero bs=1024 count=1024 2>/dev/null | tr '\\0' 'A'",
+            ],
             &stdout_path,
             &stderr_path,
         )
@@ -215,12 +364,8 @@ mod tests {
         let stdout_path = temp_dir.path().join("out");
         let stderr_path = temp_dir.path().join("err");
 
-        let result = execute_and_stream(
-            &["printf", "\\x00\\x01\\xFF"],
-            &stdout_path,
-            &stderr_path,
-        )
-        .unwrap();
+        let result =
+            execute_and_stream(&["printf", "\\x00\\x01\\xFF"], &stdout_path, &stderr_path).unwrap();
 
         assert_eq!(result.exit_code, 0);
         assert_eq!(fs::read(&stdout_path).unwrap(), vec![0x00, 0x01, 0xFF]);
@@ -228,7 +373,8 @@ mod tests {
 
     #[test]
     fn test_build_command_string() {
-        let cmd = build_command_string(&["echo".to_string(), "hello".to_string(), "world".to_string()]);
+        let cmd =
+            build_command_string(&["echo".to_string(), "hello".to_string(), "world".to_string()]);
         assert_eq!(cmd, "echo hello world");
     }
 
@@ -252,7 +398,11 @@ mod tests {
 
     #[test]
     fn test_build_command_string_special_chars() {
-        let cmd = build_command_string(&["echo".to_string(), "\"quoted\"".to_string(), "$VAR".to_string()]);
+        let cmd = build_command_string(&[
+            "echo".to_string(),
+            "\"quoted\"".to_string(),
+            "$VAR".to_string(),
+        ]);
         assert_eq!(cmd, "echo \"quoted\" $VAR");
     }
 }

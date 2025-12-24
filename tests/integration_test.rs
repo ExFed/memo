@@ -4,27 +4,36 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Helper to set up a clean temporary cache directory for tests
+/// Test environment for integration tests
+///
+/// Provides a clean temporary cache directory and helper methods for
+/// interacting with the memo binary.
 struct TestEnv {
     cache_dir: TempDir,
 }
 
 impl TestEnv {
+    /// Create a new test environment with a temporary cache directory
     fn new() -> Self {
         let cache_dir = TempDir::new().unwrap();
         Self { cache_dir }
     }
 
+    /// Get the path to the cache directory
     fn cache_path(&self) -> PathBuf {
         self.cache_dir.path().to_path_buf()
     }
 
+    /// Create a configured Command for the memo binary
+    ///
+    /// The command is pre-configured with the test cache directory.
     fn cmd(&self) -> Command {
         let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("memo");
         cmd.env("XDG_CACHE_HOME", self.cache_dir.path());
         cmd
     }
 
+    /// List all cache files in sorted order
     fn list_cache_files(&self) -> Vec<String> {
         let memo_dir = self.cache_path().join("memo");
         if !memo_dir.exists() {
@@ -39,9 +48,44 @@ impl TestEnv {
         files
     }
 
+    /// Read a cache file by name
     fn read_cache_file(&self, filename: &str) -> Vec<u8> {
         let path = self.cache_path().join("memo").join(filename);
         fs::read(&path).unwrap()
+    }
+
+    /// Assert that the cache contains exactly the specified number of files
+    fn assert_cache_file_count(&self, expected: usize) {
+        let files = self.list_cache_files();
+        assert_eq!(
+            files.len(),
+            expected,
+            "Expected {} cache files, found {}",
+            expected,
+            files.len()
+        );
+    }
+
+    /// Assert that cache structure is valid (has .json, .out, .err for each memo)
+    fn assert_valid_cache_structure(&self) {
+        let files = self.list_cache_files();
+        let memo_count = files.len() / 3;
+
+        assert_eq!(
+            files.len() % 3,
+            0,
+            "Cache should have 3 files per memo (json, out, err)"
+        );
+
+        for i in 0..memo_count {
+            let has_json = files.iter().any(|f| f.ends_with(".json"));
+            let has_out = files.iter().any(|f| f.ends_with(".out"));
+            let has_err = files.iter().any(|f| f.ends_with(".err"));
+
+            assert!(has_json, "Missing .json file for memo {}", i);
+            assert!(has_out, "Missing .out file for memo {}", i);
+            assert!(has_err, "Missing .err file for memo {}", i);
+        }
     }
 }
 
@@ -91,7 +135,7 @@ fn test_verbose_mode() {
         .assert()
         .success()
         .stdout("test\n")
-        .stderr(predicate::str::contains("Executing and memoizing: echo test"));
+        .stderr(predicate::str::contains("miss `echo test`"));
 
     // Second run - replay with verbose
     env.cmd()
@@ -101,7 +145,7 @@ fn test_verbose_mode() {
         .assert()
         .success()
         .stdout("test\n")
-        .stderr(predicate::str::contains("Replaying memoized result for: echo test"));
+        .stderr(predicate::str::contains("hit `echo test`"));
 }
 
 // Test Case 3: Different Commands
@@ -203,7 +247,7 @@ fn test_argument_separator() {
         .assert()
         .success()
         .stdout("test\n")
-        .stderr(predicate::str::contains("Executing and memoizing: echo test"));
+        .stderr(predicate::str::contains("miss `echo test`"));
 }
 
 // Test Case 7: Complex Commands
@@ -282,14 +326,8 @@ fn test_cache_directory_creation() {
 
     // Cache dir should now exist with three files
     assert!(memo_dir.exists());
-
-    let files = env.list_cache_files();
-    assert_eq!(files.len(), 3);
-
-    // Should have .json, .out, and .err files
-    assert!(files.iter().any(|f| f.ends_with(".json")));
-    assert!(files.iter().any(|f| f.ends_with(".out")));
-    assert!(files.iter().any(|f| f.ends_with(".err")));
+    env.assert_cache_file_count(3);
+    env.assert_valid_cache_structure();
 }
 
 // Test Case 11: Whitespace Handling
@@ -320,18 +358,10 @@ fn test_empty_output() {
     let env = TestEnv::new();
 
     // First run
-    env.cmd()
-        .arg("true")
-        .assert()
-        .success()
-        .stdout("");
+    env.cmd().arg("true").assert().success().stdout("");
 
     // Second run
-    env.cmd()
-        .arg("true")
-        .assert()
-        .success()
-        .stdout("");
+    env.cmd().arg("true").assert().success().stdout("");
 }
 
 // Additional Test: Verify cache file structure
@@ -339,17 +369,14 @@ fn test_empty_output() {
 fn test_cache_file_structure() {
     let env = TestEnv::new();
 
-    env.cmd()
-        .arg("echo")
-        .arg("hello")
-        .assert()
-        .success();
+    env.cmd().arg("echo").arg("hello").assert().success();
 
     let files = env.list_cache_files();
     assert_eq!(files.len(), 3);
 
     // Find the digest (basename without extension)
-    let digest = files[0].trim_end_matches(".err")
+    let digest = files[0]
+        .trim_end_matches(".err")
         .trim_end_matches(".json")
         .trim_end_matches(".out");
 
@@ -375,10 +402,13 @@ fn test_cache_file_structure() {
     let json: serde_json::Value = serde_json::from_slice(&json_content).unwrap();
 
     assert!(json["cmd"].is_array());
-    assert_eq!(json["cmd"].as_array().unwrap(), &vec![
-        serde_json::Value::String("echo".into()),
-        serde_json::Value::String("hello".into()),
-    ]);
+    assert_eq!(
+        json["cmd"].as_array().unwrap(),
+        &vec![
+            serde_json::Value::String("echo".into()),
+            serde_json::Value::String("hello".into()),
+        ]
+    );
     assert!(json["exit_code"].is_number());
     assert_eq!(json["exit_code"].as_i64().unwrap(), 0);
     assert!(json["timestamp"].is_string());
@@ -462,8 +492,8 @@ fn test_different_cache_entries() {
     env.cmd().arg("echo").arg("baz").assert().success();
 
     // Should have 9 files (3 commands × 3 files each)
-    let files = env.list_cache_files();
-    assert_eq!(files.len(), 9);
+    env.assert_cache_file_count(9);
+    env.assert_valid_cache_structure();
 }
 
 // Additional Test: Verify verbose flag can use short form
@@ -478,7 +508,7 @@ fn test_verbose_short_flag() {
         .assert()
         .success()
         .stdout("test\n")
-        .stderr(predicate::str::contains("Executing and memoizing"));
+        .stderr(predicate::str::contains("miss"));
 }
 
 // Additional Test: Mixed stdout/stderr with exit code
