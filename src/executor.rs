@@ -184,6 +184,46 @@ pub fn execute_and_stream(
     Ok(ExecutionResult { exit_code })
 }
 
+/// Execute a command and stream output directly to stdout/stderr
+///
+/// This function executes a command without any caching, streaming output
+/// directly to the current process's stdout and stderr.
+///
+/// # Arguments
+///
+/// * `args` - Command and its arguments (first element is the command)
+///
+/// # Returns
+///
+/// Returns an `ExecutionResult` containing the exit code.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - No command is provided
+/// - Command execution fails
+///
+/// # Examples
+///
+/// ```no_run
+/// # use memo::executor::execute_direct;
+/// let result = execute_direct(&["echo", "hello"]).expect("Command failed");
+/// assert_eq!(result.exit_code, 0);
+/// ```
+pub fn execute_bypass(args: &[&str]) -> Result<ExecutionResult> {
+    if args.is_empty() {
+        return Err(MemoError::InvalidCommand("No command provided".to_string()));
+    }
+
+    let status = Command::new(args[0])
+        .args(&args[1..])
+        .status()?;
+
+    let exit_code = status.code().unwrap_or(-1);
+
+    Ok(ExecutionResult { exit_code })
+}
+
 /// Execute command for testing (keeps output in memory)
 #[cfg(test)]
 fn execute_command(args: &[&str]) -> std::io::Result<TestExecutionResult> {

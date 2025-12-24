@@ -24,6 +24,24 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
+/// Check if memoization is disabled via environment variable
+///
+/// Returns `true` if `MEMO_DISABLE=1`, otherwise `false`.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use memo::cache::is_memo_disabled;
+/// if is_memo_disabled() {
+///     println!("Memoization is disabled");
+/// }
+/// ```
+pub fn is_memo_disabled() -> bool {
+    std::env::var("MEMO_DISABLE")
+        .map(|val| val == "1")
+        .unwrap_or(false)
+}
+
 /// Get the cache directory path
 ///
 /// Respects `$XDG_CACHE_HOME` environment variable, falling back to `~/.cache`.

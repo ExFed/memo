@@ -47,15 +47,15 @@ mod executor;
 mod memo;
 
 use cache::{
-    create_secure_file, ensure_cache_dir, get_cache_dir, get_cache_paths, memo_complete,
-    purge_memo, read_memo_metadata, stream_stderr, stream_stdout, try_acquire_lock,
+    create_secure_file, ensure_cache_dir, get_cache_dir, get_cache_paths, is_memo_disabled,
+    memo_complete, purge_memo, read_memo_metadata, stream_stderr, stream_stdout, try_acquire_lock,
 };
 use chrono::Utc;
 use clap::Parser;
 use constants::{LOCK_WAIT_INTERVAL_MS, LOCK_WAIT_TIMEOUT_SECS};
 use digest::compute_digest_for_args;
 use error::{MemoError, Result};
-use executor::{build_command_string, execute_and_stream};
+use executor::{build_command_string, execute_and_stream, execute_bypass};
 use memo::Memo;
 use std::io;
 use std::process;
@@ -83,6 +83,20 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = Cli::parse();
+
+    // Check if memoization is disabled
+    if is_memo_disabled() {
+        if args.verbose {
+            eprintln!(":: memo :: disabled");
+        }
+
+        // Convert Vec<String> to Vec<&str>
+        let cmd_args: Vec<&str> = args.command.iter().map(|s| s.as_str()).collect();
+
+        // Execute directly without caching
+        let result = execute_bypass(&cmd_args)?;
+        process::exit(result.exit_code);
+    }
 
     // Get cache directory
     let cache_dir = get_cache_dir()?;
