@@ -18,87 +18,6 @@ pub struct ExecutionResult {
     pub exit_code: i32,
 }
 
-/// Builder for command execution with output streaming
-///
-/// Provides a fluent API for configuring and executing commands.
-///
-/// # Examples
-///
-/// ```no_run
-/// # use memo::executor::CommandExecutor;
-/// # use std::path::Path;
-/// let result = CommandExecutor::new()
-///     .args(&["echo", "hello"])
-///     .stdout_path(Path::new("/tmp/out.txt"))
-///     .stderr_path(Path::new("/tmp/err.txt"))
-///     .execute()
-///     .expect("Command failed");
-/// assert_eq!(result.exit_code, 0);
-/// ```
-#[allow(dead_code)] // Public API, used in tests
-pub struct CommandExecutor<'a> {
-    args: Option<&'a [&'a str]>,
-    stdout_path: Option<&'a Path>,
-    stderr_path: Option<&'a Path>,
-}
-
-#[allow(dead_code)] // Public API, used in tests
-impl<'a> CommandExecutor<'a> {
-    /// Create a new command executor builder
-    pub fn new() -> Self {
-        Self {
-            args: None,
-            stdout_path: None,
-            stderr_path: None,
-        }
-    }
-
-    /// Set the command and arguments
-    pub fn args(mut self, args: &'a [&'a str]) -> Self {
-        self.args = Some(args);
-        self
-    }
-
-    /// Set the path for stdout output
-    pub fn stdout_path(mut self, path: &'a Path) -> Self {
-        self.stdout_path = Some(path);
-        self
-    }
-
-    /// Set the path for stderr output
-    pub fn stderr_path(mut self, path: &'a Path) -> Self {
-        self.stderr_path = Some(path);
-        self
-    }
-
-    /// Execute the command with the configured parameters
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Args, stdout_path, or stderr_path are not set
-    /// - Command execution fails
-    pub fn execute(self) -> Result<ExecutionResult> {
-        let args = self
-            .args
-            .ok_or_else(|| MemoError::InvalidCommand("No command provided".to_string()))?;
-        let stdout_path = self
-            .stdout_path
-            .ok_or_else(|| MemoError::InvalidCommand("No stdout path provided".to_string()))?;
-        let stderr_path = self
-            .stderr_path
-            .ok_or_else(|| MemoError::InvalidCommand("No stderr path provided".to_string()))?;
-
-        execute_and_stream(args, stdout_path, stderr_path)
-    }
-}
-
-impl<'a> Default for CommandExecutor<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Build a display string from command arguments
 ///
 /// Joins arguments with spaces for user-friendly display.
@@ -261,23 +180,6 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
-
-    #[test]
-    fn test_builder_pattern() {
-        let temp_dir = TempDir::new().unwrap();
-        let stdout_path = temp_dir.path().join("out");
-        let stderr_path = temp_dir.path().join("err");
-
-        let result = CommandExecutor::new()
-            .args(&["echo", "builder test"])
-            .stdout_path(&stdout_path)
-            .stderr_path(&stderr_path)
-            .execute()
-            .unwrap();
-
-        assert_eq!(result.exit_code, 0);
-        assert_eq!(fs::read_to_string(&stdout_path).unwrap(), "builder test\n");
-    }
 
     #[test]
     fn test_execute_simple_command() {
