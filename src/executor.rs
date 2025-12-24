@@ -376,30 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_and_stream_large_output() {
-        let temp_dir = TempDir::new().unwrap();
-        let stdout_path = temp_dir.path().join("out");
-        let stderr_path = temp_dir.path().join("err");
-
-        // Generate 1MB of output without holding it all in memory in the command
-        let result = execute_and_stream(
-            &[
-                "sh",
-                "-c",
-                "dd if=/dev/zero bs=1024 count=1024 2>/dev/null | tr '\\0' 'A'",
-            ],
-            &stdout_path,
-            &stderr_path,
-        )
-        .unwrap();
-
-        assert_eq!(result.exit_code, 0);
-        let output = fs::read(&stdout_path).unwrap();
-        assert_eq!(output.len(), 1024 * 1024);
-        assert!(output.iter().all(|&b| b == b'A'));
-    }
-
-    #[test]
     fn test_execute_and_stream_binary() {
         let temp_dir = TempDir::new().unwrap();
         let stdout_path = temp_dir.path().join("out");

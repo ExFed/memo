@@ -64,6 +64,15 @@ use std::time::{Duration, Instant};
 #[derive(Parser, Debug)]
 #[command(name = "memo")]
 #[command(about = "Memoize shell command execution", long_about = None)]
+#[command(after_help = "** SECURITY WARNING **\n\n\
+    Memoization caches stdout/stderr to disk UNENCRYPTED. Do NOT use memo with commands \
+that output sensitive information such as:\n\
+    - Authentication tokens or API keys\n\
+    - Passwords or credentials\n\
+    - Private keys or certificates\n\
+    - Personally identifiable information\n\n\
+    Cached files are stored in ~/.cache/memo/ and may be accessible to other users on shared systems.\n\
+    Use MEMO_DISABLE=1 to bypass caching for individual commands with sensitive output.")]
 struct Cli {
     /// Print memoization information
     #[arg(short, long)]
