@@ -9,6 +9,8 @@
   - Variables must be explicitly listed by user
   - e.g. `--env VAR1,VAR2,VAR3`
   - Short form: `-e VAR1,VAR2,VAR3`
+  - By default, only `PWD` is considered
+  - This supercedes the current behavior of always including working directory
 - [ ] Argument to configure output capture
   - By default, capture stdout and stderr
   - e.g. `--capture stdout` to capture only stdout
