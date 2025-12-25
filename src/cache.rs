@@ -17,7 +17,7 @@
 //! # Concurrency Strategy
 //!
 //! Uses atomic directory rename for lock-free concurrent writes:
-//! 1. Each process writes to a temp directory: `<digest>.tmp.<pid>/`
+//! 1. Each process writes to a temp directory: `<digest>.tmp.<pid>.<timestamp>/`
 //! 2. After completion, atomically renames temp dir to `<digest>/`
 //! 3. First rename wins; losers detect the existing directory and clean up
 //! 4. Orphaned temp directories are cleaned up on startup
@@ -25,6 +25,7 @@
 use crate::constants::CACHE_DIR_PERMISSIONS;
 use crate::error::{MemoError, Result};
 use crate::memo::Memo;
+use chrono::Utc;
 use std::fs::{self, File};
 use std::io::{self, copy};
 use std::path::{Path, PathBuf};
@@ -153,15 +154,13 @@ impl Drop for TempCacheDir {
 
 /// Create a temporary directory for writing cache files
 ///
-/// The temp directory is named `<digest>.tmp.<pid>` to avoid collisions
-/// between concurrent processes working on the same digest.
+/// The temp directory is named `<digest>.tmp.<pid>.<timestamp>` to avoid collisions
+/// between concurrent processes working on the same digest, even across PID reuse.
 pub fn create_temp_cache_dir(cache_dir: &Path, digest: &str) -> io::Result<TempCacheDir> {
     let pid = process::id();
-    let temp_name = format!("{}.tmp.{}", digest, pid);
+    let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+    let temp_name = format!("{}.tmp.{}.{}", digest, pid, timestamp);
     let temp_path = cache_dir.join(temp_name);
-
-    // Remove any existing temp dir from a previous crashed run of this PID
-    let _ = fs::remove_dir_all(&temp_path);
 
     create_secure_dir(&temp_path)?;
 
