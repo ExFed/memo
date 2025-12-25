@@ -83,13 +83,16 @@ struct Cli {
 }
 
 fn main() {
-    if let Err(e) = run() {
-        eprintln!(":: memo :: ERROR: {}", e);
-        process::exit(1);
+    match run() {
+        Ok(exit_code) => process::exit(exit_code),
+        Err(e) => {
+            eprintln!(":: memo :: ERROR: {}", e);
+            process::exit(1);
+        }
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<i32> {
     let args = Cli::parse();
 
     // Check if memoization is disabled
@@ -103,7 +106,7 @@ fn run() -> Result<()> {
 
         // Execute directly without caching
         let result = execute_direct(&cmd_args)?;
-        process::exit(result.exit_code);
+        return Ok(result.exit_code);
     }
 
     // Get cache directory
@@ -135,7 +138,7 @@ fn run() -> Result<()> {
         stream_stderr(&cache_dir, &digest, io::stderr())?;
 
         // Exit with stored exit code
-        process::exit(memo.exit_code);
+        Ok(memo.exit_code)
     } else {
         // Cache miss - execute and memoize
         if args.verbose {
@@ -180,9 +183,17 @@ fn run() -> Result<()> {
 
         // Atomically commit the temp directory to the final location
         // If another process already committed, that's fine - we just clean up
-        let _ = commit_cache_dir(&mut temp_dir, &cache_dir, &digest);
+        let committed = commit_cache_dir(&mut temp_dir, &cache_dir, &digest)?;
+
+        if args.verbose {
+            if committed {
+                eprintln!(":: memo :: committed temp dir {}", temp_dir.path.display());
+            } else {
+                eprintln!(":: memo :: dropping temp dir {}", temp_dir.path.display());
+            }
+        }
 
         // Exit with command's exit code (output already streamed to console)
-        process::exit(result.exit_code);
+        Ok(result.exit_code)
     }
 }

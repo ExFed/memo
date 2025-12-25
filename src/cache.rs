@@ -147,8 +147,6 @@ impl TempCacheDir {
 impl Drop for TempCacheDir {
     fn drop(&mut self) {
         if !self.committed {
-            eprintln!(":: memo :: dropping temp dir {}", self.path.display());
-
             // Clean up the temp directory if we didn't commit
             let _ = fs::remove_dir_all(&self.path);
         }
