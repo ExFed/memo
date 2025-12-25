@@ -31,6 +31,18 @@ cargo build --release
 ./target/release/memo --help
 ```
 
+### Using GNU Guix
+
+To build with a reproducible environment using [GNU Guix](https://guix.gnu.org/):
+
+```bash
+# Build the package
+guix time-machine -C channels.scm -- build -f guix.scm
+
+# Enter a development shell
+guix time-machine -C channels.scm -- shell -m manifest.scm
+```
+
 ## Usage
 
 ### Basic

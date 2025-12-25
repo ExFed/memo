@@ -10,6 +10,11 @@
 - **Run Integration**: `cargo test --test integration_test`
 - **Run**: `cargo run -- [args]`
 
+## GNU Guix
+
+- **Build**: `guix time-machine -C channels.scm -- build -f guix.scm`
+- **Dev Shell**: `guix time-machine -C channels.scm -- shell -m manifest.scm`
+
 ## Code Style & Conventions
 
 - **Rust Edition**: 2021.
