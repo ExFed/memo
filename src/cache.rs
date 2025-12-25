@@ -189,7 +189,10 @@ pub fn commit_cache_dir(
             temp_dir.committed = true;
             Ok(true)
         }
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+        Err(e)
+            if e.kind() == io::ErrorKind::AlreadyExists
+                || e.kind() == io::ErrorKind::DirectoryNotEmpty =>
+        {
             // Another process beat us to it - that's fine, just clean up
             // (Drop will handle cleanup since committed is still false)
             Ok(false)
@@ -230,7 +233,10 @@ pub fn cleanup_temp_dirs(cache_dir: &Path, verbose: bool) -> io::Result<()> {
 
         let Some(cutoff) = cutoff else {
             if verbose {
-                eprintln!(":: memo :: skipping temp dir {} (no cutoff)", path.display());
+                eprintln!(
+                    ":: memo :: skipping temp dir {} (no cutoff)",
+                    path.display()
+                );
             }
             continue;
         };
@@ -239,7 +245,10 @@ pub fn cleanup_temp_dirs(cache_dir: &Path, verbose: bool) -> io::Result<()> {
             Ok(m) => m,
             Err(_) => {
                 if verbose {
-                    eprintln!(":: memo :: skipping temp dir {} (metadata error)", path.display());
+                    eprintln!(
+                        ":: memo :: skipping temp dir {} (metadata error)",
+                        path.display()
+                    );
                 }
                 continue;
             }
@@ -249,7 +258,10 @@ pub fn cleanup_temp_dirs(cache_dir: &Path, verbose: bool) -> io::Result<()> {
             Ok(m) => m,
             Err(_) => {
                 if verbose {
-                    eprintln!(":: memo :: skipping temp dir {} (modified time error)", path.display());
+                    eprintln!(
+                        ":: memo :: skipping temp dir {} (modified time error)",
+                        path.display()
+                    );
                 }
                 continue;
             }

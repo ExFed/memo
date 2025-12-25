@@ -2,6 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::predicate;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Stdio;
 use tempfile::TempDir;
 
 /// Test environment for integration tests
@@ -78,6 +79,32 @@ impl TestEnv {
             expected,
             entries.len()
         );
+    }
+
+    /// Run N concurrent invocations of memo with the same command. Returns the
+    /// stderr output of all invocations concatenated (for diagnosing races).
+    fn run_concurrent(&self, n: usize) -> String {
+        let bin = assert_cmd::cargo::cargo_bin!("memo");
+        let mut children = vec![];
+        for _ in 0..n {
+            let child = std::process::Command::new(&bin)
+                .env("XDG_CACHE_HOME", self.cache_path())
+                .arg("-v")
+                .arg("bash")
+                .arg("-c")
+                .arg("sleep 1; echo hello")
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            children.push(child);
+        }
+
+        let mut stderr = String::new();
+        for child in children {
+            let output = child.wait_with_output().unwrap();
+            stderr.push_str(&String::from_utf8_lossy(&output.stderr));
+        }
+        stderr
     }
 
     /// Assert that the cache contains exactly the specified number of files
@@ -512,6 +539,29 @@ fn test_different_cache_entries() {
 
     // Should have 9 files (3 commands × 3 files each)
     env.assert_cache_file_count(9);
+    env.assert_valid_cache_structure();
+}
+
+// New test: concurrent invocations should not error with ENOTEMPTY
+#[test]
+fn test_concurrent_writes_no_enotempty() {
+    let env = TestEnv::new();
+
+    // Run 6 concurrent invocations
+    let stderr = env.run_concurrent(6);
+
+    // None of the stderr output should contain ENOTEMPTY/os error 39
+    assert!(
+        !stderr.contains("Directory not empty"),
+        "Found ENOTEMPTY in stderr: {}",
+        stderr
+    );
+
+    assert_eq!(1, stderr.matches("committed temp dir").count());
+    assert_eq!(5, stderr.matches("dropping temp dir").count());
+
+    // And the cache must contain exactly one entry with valid structure
+    env.assert_cache_entry_count(1);
     env.assert_valid_cache_structure();
 }
 
