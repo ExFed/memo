@@ -33,58 +33,83 @@ impl TestEnv {
         cmd
     }
 
-    /// List all cache files in sorted order
-    fn list_cache_files(&self) -> Vec<String> {
+    /// List all cache entries (digest directories) in sorted order
+    fn list_cache_entries(&self) -> Vec<String> {
         let memo_dir = self.cache_path().join("memo");
         if !memo_dir.exists() {
             return vec![];
         }
 
-        let mut files: Vec<String> = fs::read_dir(&memo_dir)
+        let mut entries: Vec<String> = fs::read_dir(&memo_dir)
             .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter_map(|e| {
+                let entry = e.unwrap();
+                let path = entry.path();
+                // Only include directories (not temp dirs)
+                if path.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.contains(".tmp.") {
+                        Some(name)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
             .collect();
-        files.sort();
-        files
+        entries.sort();
+        entries
     }
 
-    /// Read a cache file by name
-    fn read_cache_file(&self, filename: &str) -> Vec<u8> {
-        let path = self.cache_path().join("memo").join(filename);
+    /// Read a cache file from within a digest directory
+    fn read_cache_file(&self, digest: &str, filename: &str) -> Vec<u8> {
+        let path = self.cache_path().join("memo").join(digest).join(filename);
         fs::read(&path).unwrap()
     }
 
-    /// Assert that the cache contains exactly the specified number of files
-    fn assert_cache_file_count(&self, expected: usize) {
-        let files = self.list_cache_files();
+    /// Assert that the cache contains exactly the specified number of entries (directories)
+    fn assert_cache_entry_count(&self, expected: usize) {
+        let entries = self.list_cache_entries();
         assert_eq!(
-            files.len(),
+            entries.len(),
             expected,
-            "Expected {} cache files, found {}",
+            "Expected {} cache entries, found {}",
             expected,
-            files.len()
+            entries.len()
         );
     }
 
-    /// Assert that cache structure is valid (has .json, .out, .err for each memo)
+    /// Assert that the cache contains exactly the specified number of files
+    /// (backward compatibility - now counts directories)
+    fn assert_cache_file_count(&self, expected: usize) {
+        // With the new structure, 3 files = 1 directory
+        let expected_dirs = expected / 3;
+        self.assert_cache_entry_count(expected_dirs);
+    }
+
+    /// Assert that cache structure is valid (each directory has meta.json, stdout, stderr)
     fn assert_valid_cache_structure(&self) {
-        let files = self.list_cache_files();
-        let memo_count = files.len() / 3;
+        let entries = self.list_cache_entries();
+        let memo_dir = self.cache_path().join("memo");
 
-        assert_eq!(
-            files.len() % 3,
-            0,
-            "Cache should have 3 files per memo (json, out, err)"
-        );
-
-        for i in 0..memo_count {
-            let has_json = files.iter().any(|f| f.ends_with(".json"));
-            let has_out = files.iter().any(|f| f.ends_with(".out"));
-            let has_err = files.iter().any(|f| f.ends_with(".err"));
-
-            assert!(has_json, "Missing .json file for memo {}", i);
-            assert!(has_out, "Missing .out file for memo {}", i);
-            assert!(has_err, "Missing .err file for memo {}", i);
+        for entry in &entries {
+            let digest_dir = memo_dir.join(entry);
+            assert!(
+                digest_dir.join("meta.json").exists(),
+                "Missing meta.json in {}",
+                entry
+            );
+            assert!(
+                digest_dir.join("stdout").exists(),
+                "Missing stdout in {}",
+                entry
+            );
+            assert!(
+                digest_dir.join("stderr").exists(),
+                "Missing stderr in {}",
+                entry
+            );
         }
     }
 }
@@ -371,34 +396,28 @@ fn test_cache_file_structure() {
 
     env.cmd().arg("echo").arg("hello").assert().success();
 
-    let files = env.list_cache_files();
-    assert_eq!(files.len(), 3);
+    let entries = env.list_cache_entries();
+    assert_eq!(entries.len(), 1);
 
-    // Find the digest (basename without extension)
-    let digest = files[0]
-        .trim_end_matches(".err")
-        .trim_end_matches(".json")
-        .trim_end_matches(".out");
+    // The entry name is the digest
+    let digest = &entries[0];
 
-    // Verify all three files exist with same digest
-    let json_file = format!("{}.json", digest);
-    let out_file = format!("{}.out", digest);
-    let err_file = format!("{}.err", digest);
+    // Verify all three files exist within the digest directory
+    let memo_dir = env.cache_path().join("memo").join(digest);
+    assert!(memo_dir.join("meta.json").exists());
+    assert!(memo_dir.join("stdout").exists());
+    assert!(memo_dir.join("stderr").exists());
 
-    assert!(files.contains(&json_file));
-    assert!(files.contains(&out_file));
-    assert!(files.contains(&err_file));
-
-    // Verify .out contains the stdout
-    let out_content = env.read_cache_file(&out_file);
+    // Verify stdout contains the output
+    let out_content = env.read_cache_file(digest, "stdout");
     assert_eq!(out_content, b"hello\n");
 
-    // Verify .err is empty (echo has no stderr)
-    let err_content = env.read_cache_file(&err_file);
+    // Verify stderr is empty (echo has no stderr)
+    let err_content = env.read_cache_file(digest, "stderr");
     assert_eq!(err_content, b"");
 
-    // Verify .json has valid structure
-    let json_content = env.read_cache_file(&json_file);
+    // Verify meta.json has valid structure
+    let json_content = env.read_cache_file(digest, "meta.json");
     let json: serde_json::Value = serde_json::from_slice(&json_content).unwrap();
 
     assert!(json["cmd"].is_array());

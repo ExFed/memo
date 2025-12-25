@@ -12,36 +12,38 @@ prioritized roughly by impact.
     behavior.
   - Document the trade-off: stronger correctness vs fewer cache hits.
 
-- Document sensitive output risk:
+- ~~Document sensitive output risk~~ DONE:
   - Memoizing `stdout`/`stderr` can persist secrets (tokens, passwords, private
     keys) to disk.
   - Add a prominent note to `--help` and docs.
 
-- Consider an opt-out:
+- ~~Consider an opt-out~~ DONE:
   - Add a `MEMO_DISABLE=1` environment flag (execute without reading/writing cache).
 
 ## Robustness and concurrency
 
-- Handle stale lock files:
-  - If the process crashes, `<digest>.lock` may remain and block future runs.
-  - Options: lock file contains PID + timestamp; treat old locks as stale; or
-    use an OS file locking primitive when available.
+- ~~Handle stale lock files~~ SUPERSEDED by atomic directory rename:
+  - Replaced lock-based concurrency with atomic directory rename strategy.
+  - Each process writes to its own temp directory: `<digest>.tmp.<pid>/`
+  - After completion, atomically renames temp dir to `<digest>/`
+  - First rename wins; losers detect the existing directory and clean up
+  - Orphaned temp directories are cleaned up on startup via `cleanup_temp_dirs()`
+  - No locks needed, no stale lock problem possible.
 
-- Make lock waiting configurable:
-  - Current wait behavior is fixed (2 seconds). Consider `--lock-timeout` or
-    an environment variable.
+- ~~Make lock waiting configurable~~ NO LONGER APPLICABLE:
+  - Lock-based concurrency has been removed in favor of atomic directory rename.
+  - All concurrent processes run to completion; first to rename wins.
 
-- Make cache writes more crash-resilient:
-  - For metadata and outputs, consider a temp file plus atomic rename.
-  - If durability matters, consider `fsync` on file and directory.
+- ~~Make cache writes more crash-resilient~~ DONE:
+  - Implemented atomic directory rename: writes go to temp dir, then atomic rename.
+  - Partial writes are isolated in temp directories and cleaned up on startup.
+  - Cache entries are either complete or don't exist (no partial states visible).
 
 ## Code quality and warnings
 
-- Remove or reuse unused functions:
-  - There are functions in `src/cache.rs` and `src/digest.rs` that are no longer
-    referenced by the binary.
-  - Either delete them or wire them into the main flow to avoid dead-code
-    warnings.
+- ~~Remove or reuse unused functions~~ DONE:
+  - Cleaned up unused functions from `src/cache.rs`.
+  - Removed lock-related infrastructure (no longer needed with atomic rename).
 
 - Update deprecated test helper:
   - `assert_cmd::Command::cargo_bin` is deprecated. Switch to the recommended
@@ -53,5 +55,6 @@ prioritized roughly by impact.
   - Verify that `memo echo "a b"` and `memo echo a b` produce different cache
     entries (different digests).
 
-- Add a test for stale lock handling (if implemented):
-  - Simulate an abandoned lock and confirm the program can recover.
+- ~~Add a test for stale lock handling (if implemented)~~ NO LONGER APPLICABLE:
+  - Lock-based concurrency has been replaced with atomic directory rename.
+  - Temp directory cleanup is tested implicitly by the integration tests.

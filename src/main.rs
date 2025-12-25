@@ -8,10 +8,10 @@
 //! ## How It Works
 //!
 //! - **Cache Key**: SHA-256 hash of the command arguments and current working directory
-//! - **Storage**: Three separate files per memoized command:
-//!   - `<digest>.json` - Metadata (command, exit code, timestamp)
-//!   - `<digest>.out` - Captured stdout
-//!   - `<digest>.err` - Captured stderr
+//! - **Storage**: Each memoized command is stored in a subdirectory:
+//!   - `<digest>/meta.json` - Metadata (command, exit code, timestamp)
+//!   - `<digest>/stdout` - Captured stdout
+//!   - `<digest>/stderr` - Captured stderr
 //! - **Location**: `$XDG_CACHE_HOME/memo/` (defaults to `~/.cache/memo/`)
 //!
 //! ## Usage Examples
@@ -36,7 +36,7 @@
 //! - Preserves exact stdout, stderr, and exit codes
 //! - Handles binary data correctly
 //! - Streaming architecture for memory efficiency
-//! - Lock-based concurrency control
+//! - Atomic directory-based concurrency control (lock-free)
 //! - Secure file permissions on Unix systems
 
 mod cache;
@@ -47,19 +47,18 @@ mod executor;
 mod memo;
 
 use cache::{
-    create_secure_file, ensure_cache_dir, get_cache_dir, get_cache_paths, is_memo_disabled,
-    memo_complete, purge_memo, read_memo_metadata, stream_stderr, stream_stdout, try_acquire_lock,
+    cleanup_temp_dirs, commit_cache_dir, create_temp_cache_dir, ensure_cache_dir, get_cache_dir,
+    is_memo_disabled, memo_complete, read_memo_metadata, stream_stderr, stream_stdout,
 };
 use chrono::Utc;
 use clap::Parser;
-use constants::{LOCK_WAIT_INTERVAL_MS, LOCK_WAIT_TIMEOUT_SECS};
 use digest::compute_digest_for_args;
-use error::{MemoError, Result};
+use error::Result;
 use executor::{build_command_string, execute_and_stream, execute_direct};
 use memo::Memo;
-use std::io;
+use std::fs;
+use std::io::{self, Write};
 use std::process;
-use std::time::{Duration, Instant};
 
 #[derive(Parser, Debug)]
 #[command(name = "memo")]
@@ -111,6 +110,9 @@ fn run() -> Result<()> {
     let cache_dir = get_cache_dir()?;
     ensure_cache_dir(&cache_dir)?;
 
+    // Clean up any orphaned temp directories from previous crashes
+    cleanup_temp_dirs(&cache_dir)?;
+
     // Get current working directory
     let cwd = std::env::current_dir()?.to_string_lossy().to_string();
 
@@ -140,84 +142,47 @@ fn run() -> Result<()> {
             eprintln!(":: memo :: miss `{command_string}` => {digest}");
         }
 
-        // Best-effort wait if another process is currently memoizing the same digest.
-        let wait_deadline = Instant::now() + Duration::from_secs(LOCK_WAIT_TIMEOUT_SECS);
-        loop {
-            match try_acquire_lock(&cache_dir, &digest) {
-                Ok(lock) => {
-                    // If we acquired the lock but the memo became complete meanwhile, just replay.
-                    if memo_complete(&cache_dir, &digest) {
-                        if args.verbose {
-                            eprintln!(":: memo :: hit `{command_string}` => {digest}");
-                        }
-                        let memo = read_memo_metadata(&cache_dir, &digest)?;
-                        stream_stdout(&cache_dir, &digest, io::stdout())?;
-                        stream_stderr(&cache_dir, &digest, io::stderr())?;
-                        drop(lock);
-                        process::exit(memo.exit_code);
-                    }
+        let timestamp = Utc::now().to_rfc3339();
 
-                    // If a prior run left a partial cache behind, clear it.
-                    purge_memo(&cache_dir, &digest);
+        // Create a temp directory for this process to write cache files
+        let mut temp_dir = create_temp_cache_dir(&cache_dir, &digest)?;
+        let (json_path, out_path, err_path) = temp_dir.get_paths();
 
-                    // Get cache file paths
-                    let (json_path, out_path, err_path) = get_cache_paths(&cache_dir, &digest);
+        // Convert Vec<String> to Vec<&str>
+        let cmd_args: Vec<&str> = args.command.iter().map(|s| s.as_str()).collect();
 
-                    // Convert Vec<String> to Vec<&str>
-                    let cmd_args: Vec<&str> = args.command.iter().map(|s| s.as_str()).collect();
+        // Execute command and stream to files AND console simultaneously
+        let result = execute_and_stream(&cmd_args, &out_path, &err_path)?;
 
-                    // Execute command and stream to files AND console simultaneously
-                    let result = execute_and_stream(&cmd_args, &out_path, &err_path)?;
-
-                    // Report any file write errors
-                    if let Some(path) = &result.stdout_error {
-                        eprintln!(":: memo :: ERROR: could not write {}", path.display());
-                    }
-                    if let Some(path) = &result.stderr_error {
-                        eprintln!(":: memo :: ERROR: could not write {}", path.display());
-                    }
-
-                    // Create memo metadata
-                    let memo = Memo {
-                        cmd: args.command.clone(),
-                        cwd: cwd.clone(),
-                        exit_code: result.exit_code,
-                        timestamp: Utc::now().to_rfc3339(),
-                        digest: digest.clone(),
-                    };
-
-                    // Write metadata to JSON (only if it doesn't already exist)
-                    let json = serde_json::to_string_pretty(&memo)?;
-
-                    {
-                        use std::io::Write;
-                        let mut f = create_secure_file(&json_path)?;
-                        f.write_all(json.as_bytes())?;
-                    }
-
-                    // Exit with command's exit code (output already streamed to console)
-                    drop(lock);
-                    process::exit(result.exit_code);
-                }
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                    if memo_complete(&cache_dir, &digest) {
-                        if args.verbose {
-                            eprintln!(":: memo :: hit `{command_string}` => {digest}");
-                        }
-                        let memo = read_memo_metadata(&cache_dir, &digest)?;
-                        stream_stdout(&cache_dir, &digest, io::stdout())?;
-                        stream_stderr(&cache_dir, &digest, io::stderr())?;
-                        process::exit(memo.exit_code);
-                    }
-
-                    if Instant::now() >= wait_deadline {
-                        return Err(MemoError::LockTimeout);
-                    }
-
-                    std::thread::sleep(Duration::from_millis(LOCK_WAIT_INTERVAL_MS));
-                }
-                Err(e) => return Err(MemoError::Io(e)),
-            }
+        // Report any file write errors
+        if let Some(path) = &result.stdout_error {
+            eprintln!(":: memo :: ERROR: could not write {}", path.display());
         }
+        if let Some(path) = &result.stderr_error {
+            eprintln!(":: memo :: ERROR: could not write {}", path.display());
+        }
+
+        // Create memo metadata
+        let memo = Memo {
+            cmd: args.command.clone(),
+            cwd: cwd.clone(),
+            exit_code: result.exit_code,
+            timestamp,
+            digest: digest.clone(),
+        };
+
+        // Write metadata to JSON
+        let json = serde_json::to_string_pretty(&memo)?;
+        {
+            let mut f = fs::File::create(&json_path)?;
+            f.write_all(json.as_bytes())?;
+        }
+
+        // Atomically commit the temp directory to the final location
+        // If another process already committed, that's fine - we just clean up
+        let _ = commit_cache_dir(&mut temp_dir, &cache_dir, &digest);
+
+        // Exit with command's exit code (output already streamed to console)
+        process::exit(result.exit_code);
     }
 }

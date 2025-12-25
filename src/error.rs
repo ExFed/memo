@@ -25,10 +25,6 @@ pub enum MemoError {
     /// Invalid command
     #[error("Invalid command: {0}")]
     InvalidCommand(String),
-
-    /// Lock acquisition timeout
-    #[error("Timed out waiting for memoization lock")]
-    LockTimeout,
 }
 
 /// Result type alias for memo operations

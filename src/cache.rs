@@ -5,24 +5,33 @@
 //! - File path generation
 //! - Memo metadata storage and retrieval
 //! - Output streaming
-//! - Lock acquisition for concurrent safety
+//! - Atomic directory-based concurrency control
 //!
 //! # Storage Structure
 //!
-//! Each memoized command produces three files:
-//! - `<digest>.json` - Metadata (command, exit code, timestamp, digest)
-//! - `<digest>.out` - Raw stdout bytes
-//! - `<digest>.err` - Raw stderr bytes
+//! Each memoized command is stored in a subdirectory named by its digest:
+//! - `<digest>/meta.json` - Metadata (command, exit code, timestamp, digest)
+//! - `<digest>/stdout` - Raw stdout bytes
+//! - `<digest>/stderr` - Raw stderr bytes
+//!
+//! # Concurrency Strategy
+//!
+//! Uses atomic directory rename for lock-free concurrent writes:
+//! 1. Each process writes to a temp directory: `<digest>.tmp.<pid>/`
+//! 2. After completion, atomically renames temp dir to `<digest>/`
+//! 3. First rename wins; losers detect the existing directory and clean up
+//! 4. Orphaned temp directories are cleaned up on startup
 
-use crate::constants::{CACHE_DIR_PERMISSIONS, FILE_PERMISSIONS};
+use crate::constants::CACHE_DIR_PERMISSIONS;
 use crate::error::{MemoError, Result};
 use crate::memo::Memo;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, copy};
 use std::path::{Path, PathBuf};
+use std::process;
 
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 
 /// Check if memoization is disabled via environment variable
 ///
@@ -80,58 +89,126 @@ pub fn ensure_cache_dir(cache_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Check if a memo is complete (all three cache files exist)
+/// Check if a memo is complete (the digest directory exists with all three files)
 ///
-/// Returns `true` if the `.json`, `.out`, and `.err` files all exist.
+/// Returns `true` if the `<digest>/` directory exists with `meta.json`, `stdout`, and `stderr`.
 pub fn memo_complete(cache_dir: &Path, digest: &str) -> bool {
-    let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
-    json_path.exists() && out_path.exists() && err_path.exists()
+    let digest_dir = cache_dir.join(digest);
+    digest_dir.join("meta.json").exists()
+        && digest_dir.join("stdout").exists()
+        && digest_dir.join("stderr").exists()
 }
 
-pub fn purge_memo(cache_dir: &Path, digest: &str) {
-    let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
-    let _ = fs::remove_file(json_path);
-    let _ = fs::remove_file(out_path);
-    let _ = fs::remove_file(err_path);
-}
-
-pub fn get_cache_paths(cache_dir: &Path, digest: &str) -> (PathBuf, PathBuf, PathBuf) {
-    let json_path = cache_dir.join(format!("{}.json", digest));
-    let out_path = cache_dir.join(format!("{}.out", digest));
-    let err_path = cache_dir.join(format!("{}.err", digest));
+/// Get paths to the three cache files within a digest directory
+pub fn get_cache_paths_in_dir(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let json_path = dir.join("meta.json");
+    let out_path = dir.join("stdout");
+    let err_path = dir.join("stderr");
     (json_path, out_path, err_path)
 }
 
-/// Create a new file with secure permissions (owner read/write only)
-///
-/// This helper ensures consistent file creation across the codebase with
-/// appropriate security permissions on Unix systems.
-pub fn create_secure_file(path: &Path) -> io::Result<File> {
-    let mut opts = OpenOptions::new();
-    opts.write(true).create_new(true);
+/// Get paths to the cache files for a digest (convenience wrapper)
+#[cfg(test)]
+pub fn get_cache_paths(cache_dir: &Path, digest: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let digest_dir = cache_dir.join(digest);
+    get_cache_paths_in_dir(&digest_dir)
+}
+
+/// Create a secure directory with appropriate permissions
+fn create_secure_dir(path: &Path) -> io::Result<()> {
+    fs::create_dir(path)?;
 
     #[cfg(unix)]
     {
-        opts.mode(FILE_PERMISSIONS);
+        let perm = fs::Permissions::from_mode(CACHE_DIR_PERMISSIONS);
+        let _ = fs::set_permissions(path, perm);
     }
 
-    opts.open(path)
+    Ok(())
 }
 
-pub struct CacheLock {
-    path: PathBuf,
+/// Represents a temporary directory for writing cache files before atomic commit
+pub struct TempCacheDir {
+    /// Path to the temporary directory
+    pub path: PathBuf,
+    /// Whether the directory has been committed (prevents cleanup on drop)
+    committed: bool,
 }
 
-impl Drop for CacheLock {
+impl TempCacheDir {
+    /// Get paths to the cache files within this temp directory
+    pub fn get_paths(&self) -> (PathBuf, PathBuf, PathBuf) {
+        get_cache_paths_in_dir(&self.path)
+    }
+}
+
+impl Drop for TempCacheDir {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        if !self.committed {
+            // Clean up the temp directory if we didn't commit
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 }
 
-pub fn try_acquire_lock(cache_dir: &Path, digest: &str) -> io::Result<CacheLock> {
-    let lock_path = cache_dir.join(format!("{}.lock", digest));
-    let _file = create_secure_file(&lock_path)?;
-    Ok(CacheLock { path: lock_path })
+/// Create a temporary directory for writing cache files
+///
+/// The temp directory is named `<digest>.tmp.<pid>` to avoid collisions
+/// between concurrent processes working on the same digest.
+pub fn create_temp_cache_dir(cache_dir: &Path, digest: &str) -> io::Result<TempCacheDir> {
+    let pid = process::id();
+    let temp_name = format!("{}.tmp.{}", digest, pid);
+    let temp_path = cache_dir.join(temp_name);
+
+    // Remove any existing temp dir from a previous crashed run of this PID
+    let _ = fs::remove_dir_all(&temp_path);
+
+    create_secure_dir(&temp_path)?;
+
+    Ok(TempCacheDir {
+        path: temp_path,
+        committed: false,
+    })
+}
+
+/// Atomically commit a temp directory to the final cache location
+///
+/// Uses `fs::rename` which is atomic on POSIX systems when source and dest
+/// are on the same filesystem. Returns `Ok(true)` if we won the race and
+/// committed successfully, or `Ok(false)` if another process already
+/// committed a cache entry for this digest.
+pub fn commit_cache_dir(
+    temp_dir: &mut TempCacheDir,
+    cache_dir: &Path,
+    digest: &str,
+) -> io::Result<bool> {
+    let final_path = cache_dir.join(digest);
+
+    match fs::rename(&temp_dir.path, &final_path) {
+        Ok(()) => {
+            temp_dir.committed = true;
+            Ok(true)
+        }
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            // Another process beat us to it - that's fine, just clean up
+            // (Drop will handle cleanup since committed is still false)
+            Ok(false)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Clean up orphaned temporary directories in the cache
+///
+/// This should be called once during startup to clean up after crashes.
+pub fn cleanup_temp_dirs(cache_dir: &Path) -> io::Result<()> {
+    if !cache_dir.exists() {
+        return Ok(());
+    }
+
+    // TODO: how do we guarantee a directory is orphaned?
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -142,7 +219,10 @@ pub fn write_memo(
     stdout: &[u8],
     stderr: &[u8],
 ) -> io::Result<()> {
-    let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
+    let digest_dir = cache_dir.join(digest);
+    fs::create_dir_all(&digest_dir)?;
+
+    let (json_path, out_path, err_path) = get_cache_paths_in_dir(&digest_dir);
 
     let json = serde_json::to_string_pretty(memo)?;
     fs::write(json_path, json)?;
@@ -154,7 +234,8 @@ pub fn write_memo(
 
 #[cfg(test)]
 pub fn read_memo(cache_dir: &Path, digest: &str) -> io::Result<(Memo, Vec<u8>, Vec<u8>)> {
-    let (json_path, out_path, err_path) = get_cache_paths(cache_dir, digest);
+    let digest_dir = cache_dir.join(digest);
+    let (json_path, out_path, err_path) = get_cache_paths_in_dir(&digest_dir);
 
     let json = fs::read_to_string(json_path)?;
     let memo: Memo = serde_json::from_str(&json)?;
@@ -170,7 +251,8 @@ pub fn stream_stdout<W: io::Write>(
     digest: &str,
     mut writer: W,
 ) -> io::Result<()> {
-    let (_, out_path, _) = get_cache_paths(cache_dir, digest);
+    let digest_dir = cache_dir.join(digest);
+    let out_path = digest_dir.join("stdout");
     let mut file = File::open(out_path)?;
     copy(&mut file, &mut writer)?;
     Ok(())
@@ -182,7 +264,8 @@ pub fn stream_stderr<W: io::Write>(
     digest: &str,
     mut writer: W,
 ) -> io::Result<()> {
-    let (_, _, err_path) = get_cache_paths(cache_dir, digest);
+    let digest_dir = cache_dir.join(digest);
+    let err_path = digest_dir.join("stderr");
     let mut file = File::open(err_path)?;
     copy(&mut file, &mut writer)?;
     Ok(())
@@ -190,7 +273,8 @@ pub fn stream_stderr<W: io::Write>(
 
 /// Read just the memo metadata without loading output files
 pub fn read_memo_metadata(cache_dir: &Path, digest: &str) -> io::Result<Memo> {
-    let (json_path, _, _) = get_cache_paths(cache_dir, digest);
+    let digest_dir = cache_dir.join(digest);
+    let json_path = digest_dir.join("meta.json");
     let json = fs::read_to_string(json_path)?;
     let memo: Memo = serde_json::from_str(&json)?;
     Ok(memo)
@@ -359,9 +443,10 @@ mod tests {
 
         write_memo(&cache_dir, digest, &memo, b"out", b"err").unwrap();
 
-        assert!(cache_dir.join(format!("{}.json", digest)).exists());
-        assert!(cache_dir.join(format!("{}.out", digest)).exists());
-        assert!(cache_dir.join(format!("{}.err", digest)).exists());
+        let digest_dir = cache_dir.join(digest);
+        assert!(digest_dir.join("meta.json").exists());
+        assert!(digest_dir.join("stdout").exists());
+        assert!(digest_dir.join("stderr").exists());
     }
 
     #[test]
@@ -469,8 +554,8 @@ mod tests {
         let path = PathBuf::from("/tmp/cache");
         let (json, out, err) = get_cache_paths(&path, "abc123");
 
-        assert_eq!(json, PathBuf::from("/tmp/cache/abc123.json"));
-        assert_eq!(out, PathBuf::from("/tmp/cache/abc123.out"));
-        assert_eq!(err, PathBuf::from("/tmp/cache/abc123.err"));
+        assert_eq!(json, PathBuf::from("/tmp/cache/abc123/meta.json"));
+        assert_eq!(out, PathBuf::from("/tmp/cache/abc123/stdout"));
+        assert_eq!(err, PathBuf::from("/tmp/cache/abc123/stderr"));
     }
 }

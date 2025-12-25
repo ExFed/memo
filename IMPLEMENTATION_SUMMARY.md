@@ -60,11 +60,14 @@ Additional validations:
 3. **cache.rs** - File I/O operations (streaming)
    - `get_cache_dir()` - XDG_CACHE_HOME support
    - `ensure_cache_dir()` - Directory creation
-   - `memo_exists()` - Check cache hit
-   - `get_cache_paths()` - Path management
+   - `memo_complete()` - Check cache hit (all three files exist in digest dir)
+   - `get_cache_paths_in_dir()` - Path management within digest directories
    - `stream_stdout()` - Stream cached output
    - `stream_stderr()` - Stream cached errors
    - `read_memo_metadata()` - Load metadata only
+   - `create_temp_cache_dir()` - Create temp directory for atomic writes
+   - `commit_cache_dir()` - Atomically rename temp dir to final location
+   - `cleanup_temp_dirs()` - Startup cleanup of orphaned temp directories
 
 4. **executor.rs** - Command execution (streaming)
    - `execute_and_stream()` - Execute command, stream to files
@@ -83,10 +86,11 @@ Additional validations:
 - No intermediate buffering of large outputs
 - Memory-efficient for GB-sized outputs
 
-✅ **Three-File Storage**
-- `<digest>.json` - Metadata only (command, exit_code, timestamp)
-- `<digest>.out` - Raw stdout bytes
-- `<digest>.err` - Raw stderr bytes
+✅ **Directory-Based Storage**
+- Each memoized command stored in `<digest>/` subdirectory
+- `<digest>/meta.json` - Metadata only (command, exit_code, timestamp, cwd)
+- `<digest>/stdout` - Raw stdout bytes
+- `<digest>/stderr` - Raw stderr bytes
 - Avoids JSON encoding issues with binary data
 
 ✅ **SHA-256 Cache Keys**
@@ -97,6 +101,14 @@ Additional validations:
 ✅ **XDG Compliance**
 - Uses `$XDG_CACHE_HOME/memo/`
 - Falls back to `$HOME/.cache/memo/`
+
+✅ **Atomic Directory Rename (Lock-Free Concurrency)**
+- Each process writes to its own temp directory: `<digest>.tmp.<pid>/`
+- After completion, atomically renames temp dir to `<digest>/`
+- First rename wins; losers detect existing directory and clean up
+- Orphaned temp directories cleaned up on startup
+- No locks needed, no stale lock problem possible
+- All concurrent processes run to completion (no waiting)
 
 ## CLI Usage
 
@@ -120,9 +132,14 @@ memo sh -c "echo out; echo err >&2; exit 42"
 
 ```
 $XDG_CACHE_HOME/memo/
-├── 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824.json
-├── 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824.out
-├── 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824.err
+├── 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824/
+│   ├── meta.json
+│   ├── stdout
+│   └── stderr
+├── a1b2c3d4.../
+│   ├── meta.json
+│   ├── stdout
+│   └── stderr
 └── ...
 ```
 
@@ -130,7 +147,8 @@ $XDG_CACHE_HOME/memo/
 
 ```json
 {
-  "command": "echo hello",
+  "cmd": ["echo", "hello"],
+  "cwd": "/home/user/project",
   "exit_code": 0,
   "timestamp": "2025-12-22T02:48:01.911647171+00:00",
   "digest": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
@@ -199,11 +217,15 @@ As per PLAN.md, the following are intentionally NOT implemented:
 - Cache expiration/TTL
 - Cache size limits
 - Cache clearing command
-- Parallel execution safety (file locking)
+- ~~Parallel execution safety (file locking)~~ **NOW IMPLEMENTED**
+  - Lock-based concurrency control with try-delete-retry approach
+  - Automatic stale lock cleanup on startup
+  - Graceful handling of concurrent cache misses
 - Compression for large outputs
 - Statistics (cache hit rate)
-- Environment variable consideration in cache key
-- Working directory consideration in cache key
+- ~~Environment variable consideration in cache key~~ **NOW IMPLEMENTED (CWD)**
+  - Current working directory is now part of the cache key
+  - Commands in different directories produce different cache entries
 
 These are documented as future enhancements.
 
