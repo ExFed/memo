@@ -1,62 +1,43 @@
 # TODO
 
-This file tracks follow-up improvements discovered during review. Items are
-prioritized roughly by impact.
-
-## Security and correctness
-
-- Expand the cache key beyond argv:
-  - Include current working directory in the hashed input.
-  - Consider including a small, explicit allowlist of environment variables
-    (for example `PATH`, `LANG`, `LC_ALL`) when they materially affect command
-    behavior.
-  - Document the trade-off: stronger correctness vs fewer cache hits.
-
-- ~~Document sensitive output risk~~ DONE:
-  - Memoizing `stdout`/`stderr` can persist secrets (tokens, passwords, private
-    keys) to disk.
-  - Add a prominent note to `--help` and docs.
-
-- ~~Consider an opt-out~~ DONE:
-  - Add a `MEMO_DISABLE=1` environment flag (execute without reading/writing cache).
-
-## Robustness and concurrency
-
-- ~~Handle stale lock files~~ SUPERSEDED by atomic directory rename:
-  - Replaced lock-based concurrency with atomic directory rename strategy.
-  - Each process writes to its own temp directory: `<digest>.tmp.<pid>/`
-  - After completion, atomically renames temp dir to `<digest>/`
-  - First rename wins; losers detect the existing directory and clean up
-  - Orphaned temp directories are cleaned up on startup via `cleanup_temp_dirs()`
-  - No locks needed, no stale lock problem possible.
-
-- ~~Make lock waiting configurable~~ NO LONGER APPLICABLE:
-  - Lock-based concurrency has been removed in favor of atomic directory rename.
-  - All concurrent processes run to completion; first to rename wins.
-
-- ~~Make cache writes more crash-resilient~~ DONE:
-  - Implemented atomic directory rename: writes go to temp dir, then atomic rename.
-  - Partial writes are isolated in temp directories and cleaned up on startup.
-  - Cache entries are either complete or don't exist (no partial states visible).
-
-## Code quality and warnings
-
-- ~~Remove or reuse unused functions~~ DONE:
-  - Cleaned up unused functions from `src/cache.rs`.
-  - Removed lock-related infrastructure (no longer needed with atomic rename).
-
-- ~~Update deprecated test helper~~ INACCURATE:
-  - `assert_cmd::Command::cargo_bin` is deprecated. Switch to the recommended
-    replacement (`cargo::cargo_bin_cmd!`) to avoid future breakage.
-    - The function `cargo_bin` is deprecated, but the macro `cargo_bin` is not.
-      The name clash is unfortunate and misleading.
-
-## Test coverage
-
-- ~~Add an integration test for argv collision avoidance~~ DONE:
-  - Verify that `memo echo "a b"` and `memo echo a b` produce different cache
-    entries (different digests).
-
-- ~~Add a test for stale lock handling (if implemented)~~ NO LONGER APPLICABLE:
-  - Lock-based concurrency has been replaced with atomic directory rename.
-  - Temp directory cleanup is tested implicitly by the integration tests.
+- [ ] Expand `verbose` flag to support multiple levels
+  - e.g. `-v` for info, `-vv` for debug, `-vvv` for trace
+  - Add a unified logging system to replace `eprintln!` calls
+- [ ] Argument to suppress all `memo` messages (even errors)
+  - e.g. `--quiet`
+- [ ] Argument to consider environment variables in cache key
+  - Variables must be explicitly listed by user
+  - e.g. `--env VAR1,VAR2,VAR3`
+  - Short form: `-e VAR1,VAR2,VAR3`
+- [ ] Argument to configure output capture
+  - By default, capture stdout and stderr
+  - e.g. `--capture stdout` to capture only stdout
+  - e.g. `--capture stderr` to capture stderr only
+  - e.g. `--capture stdout,stderr` to capture both stdout and stderr (default)
+  - e.g. `--no-capture` to disable output capturing
+- [ ] Argument to configure exit code capture
+  - By default, capture exit code
+  - e.g. `--no-exit-code` to disable exit code capturing
+- [ ] Argument to set cache storage location
+  - e.g. `--cache-dir /path/to/cache`
+  - Short form: `-c /path/to/cache`
+  - Default to standard cache directory
+    - `$XDG_CACHE_HOME/memo`
+    - Fallback to `$HOME/.cache/memo`
+- [ ] Argument to set cache entry TTL (time-to-live)
+  - e.g. `--ttl 1h` to set cache expiration to 1 hour
+  - Support human-readable formats like `1h`, `30m`, `1d`
+  - Default TTL is infinite (no expiration)
+  - If it exists, store expiration time in metadata alongside cached entry
+  - On retrieval, if entry has expiration and is expired, treat as cache miss
+- [ ] Argument to evict existing entry
+  - e.g. `--evict` to remove existing cache entry for the given command
+- [ ] Argument to purge all cache entries
+  - e.g. `--purge` to clear the entire cache
+  - Not to be used with command to cache; only purges cache
+- [ ] Configuration file support
+  - e.g. `--config /path/to/config.toml`
+  - Support setting default values for all command-line arguments
+  - Use standard locations for config file if not specified
+    - `$XDG_CONFIG_HOME/memo/config.toml`
+    - Fallback to `$HOME/.config/memo/config.toml`
