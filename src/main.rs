@@ -111,7 +111,7 @@ fn run() -> Result<()> {
     ensure_cache_dir(&cache_dir)?;
 
     // Clean up any orphaned temp directories from previous crashes
-    cleanup_temp_dirs(&cache_dir)?;
+    cleanup_temp_dirs(&cache_dir, args.verbose)?;
 
     // Get current working directory
     let cwd = std::env::current_dir()?.to_string_lossy().to_string();

@@ -30,6 +30,7 @@ use std::fs::{self, File};
 use std::io::{self, copy};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::{Duration, SystemTime};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -146,6 +147,8 @@ impl TempCacheDir {
 impl Drop for TempCacheDir {
     fn drop(&mut self) {
         if !self.committed {
+            eprintln!(":: memo :: dropping temp dir {}", self.path.display());
+
             // Clean up the temp directory if we didn't commit
             let _ = fs::remove_dir_all(&self.path);
         }
@@ -200,12 +203,69 @@ pub fn commit_cache_dir(
 /// Clean up orphaned temporary directories in the cache
 ///
 /// This should be called once during startup to clean up after crashes.
-pub fn cleanup_temp_dirs(cache_dir: &Path) -> io::Result<()> {
+///
+/// Strategy: delete any temp directory matching `*.tmp.*` whose modified time
+/// is older than 24 hours. This avoids deleting temp dirs for currently running
+/// processes while preventing unbounded growth from crashes.
+pub fn cleanup_temp_dirs(cache_dir: &Path, verbose: bool) -> io::Result<()> {
     if !cache_dir.exists() {
         return Ok(());
     }
 
-    // TODO: how do we guarantee a directory is orphaned?
+    let cutoff = SystemTime::now().checked_sub(Duration::from_secs(60 * 60 * 24));
+
+    for entry in fs::read_dir(cache_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+
+        if !name.contains(".tmp.") {
+            continue;
+        }
+
+        let Some(cutoff) = cutoff else {
+            if verbose {
+                eprintln!(":: memo :: skipping temp dir {} (no cutoff)", path.display());
+            }
+            continue;
+        };
+
+        let metadata = match fs::metadata(&path) {
+            Ok(m) => m,
+            Err(_) => {
+                if verbose {
+                    eprintln!(":: memo :: skipping temp dir {} (metadata error)", path.display());
+                }
+                continue;
+            }
+        };
+
+        let modified = match metadata.modified() {
+            Ok(m) => m,
+            Err(_) => {
+                if verbose {
+                    eprintln!(":: memo :: skipping temp dir {} (modified time error)", path.display());
+                }
+                continue;
+            }
+        };
+
+        if modified < cutoff {
+            if verbose {
+                eprintln!(":: memo :: cleaning up temp dir {}", path.display());
+            }
+            let _ = fs::remove_dir_all(&path);
+        } else if verbose {
+            eprintln!(":: memo :: keeping temp dir {} (recent)", path.display());
+        }
+    }
 
     Ok(())
 }
