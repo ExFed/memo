@@ -604,3 +604,34 @@ fn test_mixed_output_with_error() {
         .stdout("stdout\n")
         .stderr("stderr\n");
 }
+
+// Test Case 13: Argv Collision Avoidance
+#[test]
+fn test_argv_collision_avoidance() {
+    let env = TestEnv::new();
+
+    // Command 1: echo "a b" (one argument after echo)
+    env.cmd()
+        .arg("-v")
+        .arg("echo")
+        .arg("a b")
+        .assert()
+        .success()
+        .stdout("a b\n")
+        .stderr(predicate::str::contains("miss `echo a b`"));
+
+    // Command 2: echo a b (two arguments after echo)
+    // If these collided, this would be a cache hit.
+    env.cmd()
+        .arg("-v")
+        .arg("echo")
+        .arg("a")
+        .arg("b")
+        .assert()
+        .success()
+        .stdout("a b\n")
+        .stderr(predicate::str::contains("miss `echo a b`"));
+
+    // Verify we have two distinct cache entries
+    env.assert_cache_entry_count(2);
+}

@@ -45,13 +45,15 @@ prioritized roughly by impact.
   - Cleaned up unused functions from `src/cache.rs`.
   - Removed lock-related infrastructure (no longer needed with atomic rename).
 
-- Update deprecated test helper:
+- ~~Update deprecated test helper~~ INACCURATE:
   - `assert_cmd::Command::cargo_bin` is deprecated. Switch to the recommended
     replacement (`cargo::cargo_bin_cmd!`) to avoid future breakage.
+    - The function `cargo_bin` is deprecated, but the macro `cargo_bin` is not.
+      The name clash is unfortunate and misleading.
 
 ## Test coverage
 
-- Add an integration test for argv collision avoidance:
+- ~~Add an integration test for argv collision avoidance~~ DONE:
   - Verify that `memo echo "a b"` and `memo echo a b` produce different cache
     entries (different digests).
 
