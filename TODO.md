@@ -1,5 +1,7 @@
 # TODO
 
+## Features
+
 - [ ] Expand `verbose` flag to support multiple levels
   - e.g. `-v` for info, `-vv` for debug, `-vvv` for trace
   - Add a unified logging system to replace `eprintln!` calls
@@ -43,3 +45,16 @@
   - Use standard locations for config file if not specified
     - `$XDG_CONFIG_HOME/memo/config.toml`
     - Fallback to `$HOME/.config/memo/config.toml`
+- [ ] Support for different hashing algorithms
+  - e.g. `--hash sha256` to use SHA-256 instead of default
+- [ ] Limit cache size
+  - e.g. `--max-size 100MB` to limit cache size to 100 megabytes
+  - Implement eviction policy (e.g. LRU) when limit is reached
+
+## Build and Release
+
+- [ ] Set up CI/CD pipeline for automated testing and releases
+  - Use GitHub Actions or similar service
+  - Enforce code quality checks (linting, formatting)
+  - Automate release process on new tags
+  - Tag determines version number (i.e. Cargo.toml version field)
