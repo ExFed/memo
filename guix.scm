@@ -6,15 +6,27 @@
               #:prefix license:)
              (guix build-system cargo)
              (gnu packages)
-             (gnu packages pkg-config))
+             (gnu packages pkg-config)
+             (ice-9 popen)
+             (ice-9 rdelim))
 
 (define %source-dir
   (dirname (current-filename)))
 
+(define (git-version)
+  "Get version from git describe, or fallback to env var or default"
+  (or (getenv "GUIX_PACKAGE_VERSION")
+      (let* ((pipe (open-pipe* OPEN_READ "git" "describe" "--tags" "--always" "--dirty" "--match" "v*.*.*"))
+             (version (read-line pipe))
+             (status (close-pipe pipe)))
+        (if (and (zero? status) (not (eof-object? version)))
+            version
+            "0.0.0-dev"))))
+
 (define-public memo
   (package
     (name "memo")
-    (version (or (getenv "GUIX_PACKAGE_VERSION") "0.0.0-dev"))
+    (version (git-version))
     (source
       (local-file %source-dir
                   #:recursive? #t
