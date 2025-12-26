@@ -61,7 +61,7 @@ use std::io::{self, Write};
 use std::process;
 
 #[derive(Parser, Debug)]
-#[command(name = "memo", version)]
+#[command(name = "memo", version = env!("GIT_VERSION"))]
 #[command(about = "Memoize shell command execution", long_about = None)]
 #[command(after_help = "** SECURITY WARNING **\n\n\
     Memoization caches stdout/stderr to disk UNENCRYPTED. Do NOT use memo with commands \

@@ -18,14 +18,14 @@ jobs:
 
     - name: Update Cargo.toml version
       run: |
-        VERSION=$(git describe --tags --match="v*.*.*")
+        VERSION=$(git describe --tags --always --match="v*.*.*")
         sed -i "s/^version = \"0\.0\.0-dev\"/version = \"$VERSION\"/" Cargo.toml
         sed -i "s/^version = \"0\.0\.0-dev\"/version = \"$VERSION\"/" Cargo.lock
 
     - name: Build with Guix
       id: build
       run: |
-        VERSION=$(git describe --tags --match="v*.*.*")
+        VERSION=$(git describe --tags --always --match="v*.*.*")
         export GUIX_PACKAGE_VERSION=$VERSION
 
         # Build and capture the output path. We need to use -E to preserve the
