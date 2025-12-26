@@ -6,7 +6,6 @@
               #:prefix license:)
              (guix build-system cargo)
              (gnu packages)
-             (gnu packages tls)
              (gnu packages pkg-config))
 
 (define %source-dir
@@ -15,7 +14,7 @@
 (define-public memo
   (package
     (name "memo")
-    (version (or (getenv "GUIX_PACKAGE_VERSION") "dev"))
+    (version (or (getenv "GUIX_PACKAGE_VERSION") "0.0.0-dev"))
     (source
       (local-file %source-dir
                   #:recursive? #t

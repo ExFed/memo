@@ -19,7 +19,8 @@ jobs:
     - name: Update Cargo.toml version
       run: |
         VERSION=${GITHUB_REF#refs/tags/v}
-        sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+        sed -i "s/^version = \"0\.0\.0-dev\"/version = \"$VERSION\"/" Cargo.toml
+        sed -i "s/^version = \"0\.0\.0-dev\"/version = \"$VERSION\"/" Cargo.lock
 
     - name: Build with Guix
       id: build
