@@ -15,7 +15,7 @@
 (define-public memo
   (package
     (name "memo")
-    (version "dev")
+    (version (or (getenv "GUIX_PACKAGE_VERSION") "dev"))
     (source
       (local-file %source-dir
                   #:recursive? #t

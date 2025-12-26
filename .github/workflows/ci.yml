@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install GNU Guix
+      uses: PromyLOPh/guix-install-action@v1
+
+    - name: Guix Build
+      run: guix time-machine -C channels.scm -- build -f guix.scm
+
+    - name: Run Lints
+      run: guix time-machine -C channels.scm -- shell -m manifest.scm -- cargo clippy -- -D warnings
+
+    - name: Run Tests
+      run: guix time-machine -C channels.scm -- shell -m manifest.scm -- cargo test
