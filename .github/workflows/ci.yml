@@ -28,7 +28,7 @@ jobs:
     - name: Restore Guix Manifest NAR
       if: steps.guix-cache.outputs.cache-hit == 'true'
       run: |
-        guix archive --authorize < guix-manifest-cache/signing-key.pub
+        sudo `which guix` archive --authorize < guix-manifest-cache/signing-key.pub
         guix archive --import < guix-manifest-cache/manifest.nar
 
     - name: Install Dev Environment
