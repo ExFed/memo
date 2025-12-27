@@ -19,6 +19,8 @@
   - e.g. `--capture stderr` to capture stderr only
   - e.g. `--capture stdout,stderr` to capture both stdout and stderr (default)
   - e.g. `--no-capture` to disable output capturing
+- [ ] Support for capturing and caching arbitrary file descriptors
+  - e.g. `--capture stdout,3,4` to capture stdout and file descriptors 3 and 4
 - [ ] Argument to configure exit code capture
   - By default, capture exit code
   - e.g. `--no-exit-code` to disable exit code capturing
