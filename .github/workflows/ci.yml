@@ -49,11 +49,8 @@ jobs:
       run: |
         VERSION=$(git describe --tags --always --match="v*.*.*")
         export GUIX_PACKAGE_VERSION=$VERSION
+        export CARGO_PKG_VERSION=$VERSION
 
-        # Build and capture the output path. We need to use -E to preserve the
-        # environment variable inside the build container if using container
-        # features But for 'guix build -f file.scm', the evaluation happens in
-        # the current shell context first
         OUT_PATH=$(guix build -f guix.scm)
         echo "out_path=$OUT_PATH" >> $GITHUB_OUTPUT
 
