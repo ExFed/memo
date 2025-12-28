@@ -70,7 +70,7 @@ jobs:
       run: cargo test
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v6
       with:
         name: memo-binary
         path: target/artifact
