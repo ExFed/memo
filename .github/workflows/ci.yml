@@ -55,13 +55,13 @@ jobs:
         echo "out_path=$OUT_PATH" >> $GITHUB_OUTPUT
 
         # Create a release directory
-        mkdir release-artifact
+        mkdir target/artifact
 
         # Copy the binary from the store to the release directory
-        cp "$OUT_PATH/bin/memo" release-artifact/
+        cp -r "$OUT_PATH" target/artifact/
 
         # Verify the binary exists
-        ls -la release-artifact/
+        ls -la target/artifact/
 
     - name: Run Lints
       run: cargo clippy -- -D warnings
@@ -69,11 +69,18 @@ jobs:
     - name: Run Tests
       run: cargo test
 
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: memo-binary
+        path: target/artifact
+        retention-days: 30
+
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v1
       with:
-        files: release-artifact/memo
+        files: target/artifact/bin/memo
         generate_release_notes: true
 
     - name: Save Guix Manifest NAR
