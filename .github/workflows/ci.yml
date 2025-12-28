@@ -55,7 +55,7 @@ jobs:
         echo "out_path=$OUT_PATH" >> $GITHUB_OUTPUT
 
         # Create a release directory
-        mkdir target/artifact
+        mkdir -p target/artifact
 
         # Copy the binary from the store to the release directory
         cp -r "$OUT_PATH" target/artifact/
