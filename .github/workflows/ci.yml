@@ -3,12 +3,17 @@ name: CI
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*.*.*" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
     steps:
     - name: Checkout project
       uses: actions/checkout@v4
@@ -31,20 +36,46 @@ jobs:
         sudo `which guix` archive --authorize < guix-manifest-cache/signing-key.pub
         guix archive --import < guix-manifest-cache/manifest.nar
 
-    - name: Install Dev Environment
+    - name: Install Build Environment
       run: |
         set -euo pipefail
         guix pull -C channels.scm
         guix package -m manifest.scm
 
     - name: Guix Build
-      run: guix build -f guix.scm
+      id: build
+      run: |
+        VERSION=$(git describe --tags --always --match="v*.*.*")
+        export GUIX_PACKAGE_VERSION=$VERSION
+
+        # Build and capture the output path. We need to use -E to preserve the
+        # environment variable inside the build container if using container
+        # features But for 'guix build -f file.scm', the evaluation happens in
+        # the current shell context first
+        OUT_PATH=$(guix build -f guix.scm)
+        echo "out_path=$OUT_PATH" >> $GITHUB_OUTPUT
+
+        # Create a release directory
+        mkdir release-artifact
+
+        # Copy the binary from the store to the release directory
+        cp "$OUT_PATH/bin/memo" release-artifact/
+
+        # Verify the binary exists
+        ls -la release-artifact/
 
     - name: Run Lints
       run: cargo clippy -- -D warnings
 
     - name: Run Tests
       run: cargo test
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-artifact/memo
+        generate_release_notes: true
 
     - name: Save Guix Manifest NAR
       if: steps.guix-cache.outputs.cache-hit != 'true'
