@@ -21,7 +21,7 @@
              (status (close-pipe pipe)))
         (if (and (zero? status) (not (eof-object? version)))
             version
-            "0.0.0-dev"))))
+            "0.0.0-placeholder"))))
 
 (define-public memo
   (package
