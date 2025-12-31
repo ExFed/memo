@@ -61,7 +61,17 @@ use std::io::{self, Write};
 use std::process;
 
 #[derive(Parser, Debug)]
-#[command(name = "memo", version = env!("GIT_VERSION"))]
+#[command(
+    name = "memo",
+    version = env!("VERGEN_GIT_DESCRIBE"),
+    long_version = concat!(
+        env!("VERGEN_GIT_DESCRIBE"),
+        "\ncommit-id     ", env!("VERGEN_GIT_SHA"),
+        "\ncommit-time   ", env!("VERGEN_GIT_COMMIT_TIMESTAMP"),
+        "\nrustc-version ", env!("VERGEN_RUSTC_SEMVER"),
+        "\ntarget-arch   ", env!("VERGEN_CARGO_TARGET_TRIPLE"),
+    ),
+)]
 #[command(about = "Memoize shell command execution", long_about = None)]
 #[command(after_help = "** SECURITY WARNING **\n\n\
     Memoization caches stdout/stderr to disk UNENCRYPTED. Do NOT use memo with commands \

@@ -18,3 +18,7 @@ tempfile = "3.8"
 assert_cmd = "2.0"
 predicates = "3.0"
 shell-words = "1.1"
+
+[build-dependencies]
+anyhow = "1.0.100"
+vergen-gitcl = { version = "1.0.8", features = ["build", "cargo", "rustc", "si"] }

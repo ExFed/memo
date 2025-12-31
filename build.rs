@@ -1,24 +1,26 @@
-use std::process::Command;
+use vergen_gitcl::{
+    BuildBuilder, CargoBuilder, Emitter, GitclBuilder, RustcBuilder, SysinfoBuilder,
+};
 
 fn main() {
-    // Attempt to get version from git describe, filtering for version tags (v*.*.*)
-    let output = Command::new("git")
-        .args(["describe", "--tags", "--always", "--dirty", "--match", "v*.*.*"])
-        .output();
+    generate_version().unwrap();
+}
 
-    let git_version = match output {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).trim().to_string()
-        }
-        _ => {
-            // Fallback to Cargo.toml version if git is unavailable or fails
-            env!("CARGO_PKG_VERSION").to_string()
-        }
-    };
+fn generate_version() -> anyhow::Result<()> {
+    let build = BuildBuilder::all_build()?;
+    let cargo = CargoBuilder::all_cargo()?;
+    let gitcl = GitclBuilder::default()
+        .all()
+        .describe(true, true, Some("v*.*.*"))
+        .build()?;
+    let rustc = RustcBuilder::all_rustc()?;
+    let sysinfo = SysinfoBuilder::all_sysinfo()?;
 
-    println!("cargo:rustc-env=GIT_VERSION={}", git_version);
-    
-    // Rerun build script if git state changes
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs/tags");
+    Emitter::new()
+        .add_instructions(&build)?
+        .add_instructions(&cargo)?
+        .add_instructions(&gitcl)?
+        .add_instructions(&rustc)?
+        .add_instructions(&sysinfo)?
+        .emit()
 }
