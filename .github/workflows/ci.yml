@@ -35,39 +35,51 @@ jobs:
     - name: Restore Guix Manifest NAR
       if: steps.guix-cache.outputs.cache-hit == 'true'
       run: |
+        set -xeuo pipefail
         sudo `which guix` archive --authorize < ~/guix-manifest-cache/signing-key.pub
         guix archive --import < ~/guix-manifest-cache/manifest.nar
 
     - name: Install Build Environment
       run: |
-        set -euo pipefail
+        set -xeuo pipefail
         guix pull -C channels.scm
         guix package -m manifest.scm
 
     - name: Guix Build
       id: build
       run: |
-        VERSION=$(git describe --tags --always --match="v*.*.*")
-        export GUIX_PACKAGE_VERSION=$VERSION
-        export CARGO_PKG_VERSION=$VERSION
+        guix shell -m manifest.scm -- sh <<'EOF'
+          set -xeuo pipefail
+          VERSION=$(git describe --tags --always --match="v*.*.*")
+          export GUIX_PACKAGE_VERSION=$VERSION
+          export CARGO_PKG_VERSION=$VERSION
 
-        OUT_PATH=$(guix build -f guix.scm)
-        echo "out_path=$OUT_PATH" >> $GITHUB_OUTPUT
+          OUT_PATH=$(guix build -f guix.scm)
+          echo "out_path=$OUT_PATH" >> $GITHUB_OUTPUT
 
-        # Create a release directory
-        mkdir -p target/artifact
+          # Create a release directory
+          mkdir -p target/artifact
 
-        # Copy the binary from the store to the release directory
-        cp -r "$OUT_PATH" target/artifact/
+          # Copy the binary from the store to the release directory
+          cp -r "$OUT_PATH" target/artifact/
 
-        # Verify the binary exists
-        ls -la target/artifact/
+          # Verify the binary exists
+          ls -la target/artifact/
+        EOF
 
     - name: Run Lints
-      run: cargo clippy -- -D warnings
+      run: |
+        guix shell -m manifest.scm -- sh <<'EOF'
+          set -xeuo pipefail
+          cargo clippy -- -D warnings
+        EOF
 
     - name: Run Tests
-      run: cargo test
+      run: |
+        guix shell -m manifest.scm -- sh <<'EOF'
+          set -xeuo pipefail
+          cargo test
+        EOF
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v6
@@ -86,6 +98,7 @@ jobs:
     - name: Save Guix Manifest NAR
       if: steps.guix-cache.outputs.cache-hit != 'true'
       run: |
+        set -xeuo pipefail
         mkdir -p ~/guix-manifest-cache
         guix build -m manifest.scm \
           | xargs guix archive --export -r > ~/guix-manifest-cache/manifest.nar
