@@ -141,7 +141,7 @@ impl TestEnv {
     }
 }
 
-// Test Case 1: Basic Memoization
+// Test Case: Basic Memoization
 #[test]
 fn test_basic_memoization() {
     let env = TestEnv::new();
@@ -174,7 +174,7 @@ fn test_basic_memoization() {
     assert_eq!(output1, output2);
 }
 
-// Test Case 2: Verbose Mode
+// Test Case: Verbose Mode
 #[test]
 fn test_verbose_mode() {
     let env = TestEnv::new();
@@ -200,7 +200,7 @@ fn test_verbose_mode() {
         .stderr(predicate::str::contains("hit `echo test`"));
 }
 
-// Test Case 3: Different Commands
+// Test Case: Different Commands
 #[test]
 fn test_different_commands() {
     let env = TestEnv::new();
@@ -228,7 +228,7 @@ fn test_different_commands() {
         .stdout("foo\n");
 }
 
-// Test Case 4: Exit Code Preservation
+// Test Case: Exit Code Preservation
 #[test]
 fn test_exit_code_preservation() {
     let env = TestEnv::new();
@@ -250,7 +250,7 @@ fn test_exit_code_preservation() {
         .code(42);
 }
 
-// Test Case 5: Stderr Capture
+// Test Case: Stderr Capture
 #[test]
 fn test_stderr_capture() {
     let env = TestEnv::new();
@@ -276,7 +276,7 @@ fn test_stderr_capture() {
         .stderr("err\n");
 }
 
-// Test Case 6: Argument Separator
+// Test Case: Argument Separator
 #[test]
 fn test_argument_separator() {
     let env = TestEnv::new();
@@ -302,7 +302,7 @@ fn test_argument_separator() {
         .stderr(predicate::str::contains("miss `echo test`"));
 }
 
-// Test Case 7: Complex Commands
+// Test Case: Complex Commands
 #[test]
 fn test_complex_commands() {
     let env = TestEnv::new();
@@ -334,7 +334,7 @@ fn test_complex_commands() {
     assert_eq!(output1, output2);
 }
 
-// Test Case 8: Help Display
+// Test Case: Help Display
 #[test]
 fn test_help_display() {
     let env = TestEnv::new();
@@ -348,7 +348,63 @@ fn test_help_display() {
         .stdout(predicate::str::contains("--help"));
 }
 
-// Test Case 9: No Command Error
+// Test Case: Version Display
+#[test]
+fn test_version_display() {
+    let env = TestEnv::new();
+
+    // Test short version format with -V
+    let output = env
+        .cmd()
+        .arg("-V")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let short_version = String::from_utf8_lossy(&output);
+
+    // Should start with "memo v"
+    assert!(short_version.starts_with("memo v"),
+            "Short version should start with 'memo v', got: {}", short_version);
+
+    // Should be a single line
+    assert_eq!(short_version.lines().count(), 1,
+               "Short version should be one line, got: {}", short_version);
+
+    // Test long version format with --version
+    let output = env
+        .cmd()
+        .arg("--version")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let long_version = String::from_utf8_lossy(&output);
+
+    // Should contain version info
+    assert!(long_version.contains("memo v"),
+            "Long version should contain 'memo v', got: {}", long_version);
+
+    // Should not contain VERGEN placeholders (means version was set correctly)
+    assert!(!long_version.contains("VERGEN"),
+            "Version should not contain VERGEN placeholders, got: {}", long_version);
+
+    // Should contain detailed version information
+    assert!(long_version.contains("commit-id"),
+            "Long version should contain 'commit-id', got: {}", long_version);
+    assert!(long_version.contains("commit-time"),
+            "Long version should contain 'commit-time', got: {}", long_version);
+    assert!(long_version.contains("rustc-version"),
+            "Long version should contain 'rustc-version', got: {}", long_version);
+    assert!(long_version.contains("target-arch"),
+            "Long version should contain 'target-arch', got: {}", long_version);
+}
+
+// Test Case: No Command Error
 #[test]
 fn test_no_command_error() {
     let env = TestEnv::new();
@@ -359,7 +415,7 @@ fn test_no_command_error() {
         .stderr(predicate::str::contains("required"));
 }
 
-// Test Case 10: Cache Directory Creation
+// Test Case: Cache Directory Creation
 #[test]
 fn test_cache_directory_creation() {
     let env = TestEnv::new();
@@ -382,7 +438,7 @@ fn test_cache_directory_creation() {
     env.assert_valid_cache_structure();
 }
 
-// Test Case 11: Whitespace Handling
+// Test Case: Whitespace Handling
 #[test]
 fn test_whitespace_handling() {
     let env = TestEnv::new();
@@ -404,7 +460,7 @@ fn test_whitespace_handling() {
         .stdout("  spaces  \n");
 }
 
-// Test Case 12: Empty Output
+// Test Case: Empty Output
 #[test]
 fn test_empty_output() {
     let env = TestEnv::new();
@@ -605,7 +661,7 @@ fn test_mixed_output_with_error() {
         .stderr("stderr\n");
 }
 
-// Test Case 13: Argv Collision Avoidance
+// Test Case: Argv Collision Avoidance
 #[test]
 fn test_argv_collision_avoidance() {
     let env = TestEnv::new();
