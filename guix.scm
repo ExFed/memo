@@ -24,46 +24,19 @@
             version
             "0.0.0-placeholder"))))
 
-(define (git-sha)
-  "Get git SHA, or fallback to UNKNOWN"
-  (let* ((pipe (open-pipe* OPEN_READ "git" "rev-parse" "HEAD"))
-         (sha (read-line pipe))
-         (status (close-pipe pipe)))
-    (if (and (zero? status) (not (eof-object? sha)))
-        sha
-        "UNKNOWN")))
-
-(define (git-commit-timestamp)
-  "Get git commit timestamp in RFC3339 format"
-  (let* ((pipe (open-pipe* OPEN_READ "git" "log" "-1" "--format=%cI"))
-         (timestamp (read-line pipe))
-         (status (close-pipe pipe)))
-    (if (and (zero? status) (not (eof-object? timestamp)))
-        timestamp
-        "UNKNOWN")))
-
 (define-public memo
   (package
     (name "memo")
     (version (git-version))
     (source
       (local-file %source-dir
-                  #:recursive? #t
-                  #:select? (git-predicate %source-dir)))
+                  #:recursive? #t))
     (build-system cargo-build-system)
     (native-inputs (list pkg-config git-minimal))
     (inputs (cons* (cargo-inputs-from-lockfile "Cargo.lock")))
     (arguments
     `(#:install-source? #f
-      #:tests? #f
-      #:phases
-      (modify-phases %standard-phases
-        (add-before 'build 'set-vergen-env
-          (lambda _
-            (setenv "VERGEN_GIT_DESCRIBE" ,(git-version))
-            (setenv "VERGEN_GIT_SHA" ,(git-sha))
-            (setenv "VERGEN_GIT_COMMIT_TIMESTAMP" ,(git-commit-timestamp))
-            #t)))))
+      #:tests? #f))
     (home-page "https://github.com/ExFed/memo")
     (synopsis "Shell command memoization tool")
     (description
