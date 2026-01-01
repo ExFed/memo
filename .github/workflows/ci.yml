@@ -48,7 +48,7 @@ jobs:
     - name: Guix Build
       id: build
       run: |
-        guix shell -m manifest.scm -- sh <<'EOF'
+        guix shell -m manifest.scm -- bash <<'EOF'
           set -xeuo pipefail
           VERSION=$(git describe --tags --always --match="v*.*.*")
           export GUIX_PACKAGE_VERSION=$VERSION
@@ -69,14 +69,11 @@ jobs:
 
     - name: Run Lints
       run: |
-        guix shell -m manifest.scm -- sh <<'EOF'
-          set -xeuo pipefail
-          cargo clippy -- -D warnings
-        EOF
+        cargo clippy -- -D warnings
 
     - name: Run Tests
       run: |
-        guix shell -m manifest.scm -- sh <<'EOF'
+        guix shell -m manifest.scm -- bash <<'EOF'
           set -xeuo pipefail
           cargo test
         EOF
