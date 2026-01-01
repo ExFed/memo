@@ -17,6 +17,8 @@ jobs:
     steps:
     - name: Checkout project
       uses: actions/checkout@v4
+      with:
+        fetch-tags: true
 
     - name: Install GNU Guix
       uses: PromyLOPh/guix-install-action@v1
