@@ -53,7 +53,8 @@ jobs:
         set -xeuo pipefail
 
         guix build -f guix.scm > /tmp/guix-build.out
-        echo "out_path=$(cat /tmp/guix-build.out)" >> $GITHUB_OUTPUT
+        OUT_PATH=$(cat /tmp/guix-build.out)
+        echo "out_path=$OUT_PATH" >> $GITHUB_OUTPUT
 
         # Create a release directory
         mkdir -p target/artifact
