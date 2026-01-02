@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::predicate;
+use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -364,14 +365,22 @@ fn test_version_display() {
         .clone();
 
     let short_version = String::from_utf8_lossy(&output);
+    println!("Short version:\n{}", short_version);
 
-    // Should start with "memo v"
-    assert!(short_version.starts_with("memo v"),
-            "Short version should start with 'memo v', got: {}", short_version);
+    let short_regex = Regex::new(r#"^memo v[0-9]+\.[0-9]+\.[0-9]+.*"#).unwrap();
 
-    // Should be a single line
-    assert_eq!(short_version.lines().count(), 1,
-               "Short version should be one line, got: {}", short_version);
+    assert!(
+        short_regex.is_match(&short_version),
+        "Short version should contain a SemVer ('memo v*.*.*'). got: {}",
+        short_version
+    );
+
+    assert_eq!(
+        short_version.lines().count(),
+        1,
+        "Short version should be one line, got: {}",
+        short_version
+    );
 
     // Test long version format with --version
     let output = env
@@ -384,24 +393,40 @@ fn test_version_display() {
         .clone();
 
     let long_version = String::from_utf8_lossy(&output);
+    println!("Long version:\n{}", long_version);
 
-    // Should contain version info
-    assert!(long_version.contains("memo v"),
-            "Long version should contain 'memo v', got: {}", long_version);
+    assert!(
+        long_version.contains(&*short_version),
+        "Long version should contain the short version. got: {}",
+        long_version
+    );
 
-    // Should not contain VERGEN placeholders (means version was set correctly)
-    assert!(!long_version.contains("VERGEN"),
-            "Version should not contain VERGEN placeholders, got: {}", long_version);
+    assert!(
+        !long_version.contains("VERGEN"),
+        "Version should not contain VERGEN placeholders, got: {}",
+        long_version
+    );
 
-    // Should contain detailed version information
-    assert!(long_version.contains("commit-id"),
-            "Long version should contain 'commit-id', got: {}", long_version);
-    assert!(long_version.contains("commit-time"),
-            "Long version should contain 'commit-time', got: {}", long_version);
-    assert!(long_version.contains("rustc-version"),
-            "Long version should contain 'rustc-version', got: {}", long_version);
-    assert!(long_version.contains("target-arch"),
-            "Long version should contain 'target-arch', got: {}", long_version);
+    assert!(
+        long_version.contains("commit-id"),
+        "Long version should contain 'commit-id', got: {}",
+        long_version
+    );
+    assert!(
+        long_version.contains("commit-time"),
+        "Long version should contain 'commit-time', got: {}",
+        long_version
+    );
+    assert!(
+        long_version.contains("rustc-version"),
+        "Long version should contain 'rustc-version', got: {}",
+        long_version
+    );
+    assert!(
+        long_version.contains("target-arch"),
+        "Long version should contain 'target-arch', got: {}",
+        long_version
+    );
 }
 
 // Test Case: No Command Error

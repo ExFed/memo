@@ -18,6 +18,7 @@ tempfile = "3.8"
 assert_cmd = "2.0"
 predicates = "3.0"
 shell-words = "1.1"
+regex = "1.12.2"
 
 [build-dependencies]
 anyhow = "1.0.100"

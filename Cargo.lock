@@ -553,6 +553,7 @@ dependencies = [
  "dirs",
  "hex",
  "predicates",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
